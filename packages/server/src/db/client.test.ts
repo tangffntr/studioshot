@@ -87,24 +87,24 @@ describe("db schema CRUD", () => {
   it("vendors + 凭证 + models + task_slots 关联", () => {
     const db = getDb();
     db.insert(vendors).values({
-      id: "grsai", name: "Grsai", category: "image", adapter: "grsai",
-      baseUrl: "https://grsai.dakka.com.cn", inputs: JSON.stringify([{ key: "apiKey", type: "password", required: true }]),
+      id: "testvendor", name: "TestVendor", category: "image", adapter: "grsai",
+      baseUrl: "https://x.com", inputs: JSON.stringify([{ key: "apiKey", type: "password", required: true }]),
       createdAt: Date.now(),
     }).run();
     db.insert(vendorCredentials).values({
-      vendorId: "grsai", valuesEnc: "encrypted-blob", enabled: 1, updatedAt: Date.now(),
+      vendorId: "testvendor", valuesEnc: "encrypted-blob", enabled: 1, updatedAt: Date.now(),
     }).run();
     db.insert(models).values({
-      id: "grsai:gpt-image-2", vendorId: "grsai", modelName: "gpt-image-2",
-      displayName: "GPT Image 2", type: "image", modes: JSON.stringify(["text", "singleImage", "multiReference"]),
+      id: "testvendor:test-model", vendorId: "testvendor", modelName: "test-model",
+      displayName: "Test Model", type: "image", modes: JSON.stringify(["text", "singleImage"]),
       pricing: JSON.stringify({ unit: "per-image", price: 50 }), enabled: 1,
     }).run();
-    db.insert(taskSlots).values({ slotKey: "main-image", modelId: "grsai:gpt-image-2", params: JSON.stringify({ size: "1024x1024" }) }).run();
+    db.insert(taskSlots).values({ slotKey: "test-slot", modelId: "testvendor:test-model", params: JSON.stringify({ size: "1024x1024" }) }).run();
 
-    const m = db.select().from(models).all()[0];
-    expect(m.vendorId).toBe("grsai");
-    const ts = db.select().from(taskSlots).all()[0];
-    expect(ts.modelId).toBe("grsai:gpt-image-2");
-    expect(ts.slotKey).toBe("main-image");
+    const m = db.select().from(models).where(eq(models.id, "testvendor:test-model")).all()[0];
+    expect(m.vendorId).toBe("testvendor");
+    const ts = db.select().from(taskSlots).where(eq(taskSlots.slotKey, "test-slot")).all()[0];
+    expect(ts.modelId).toBe("testvendor:test-model");
+    expect(ts.slotKey).toBe("test-slot");
   });
 });
