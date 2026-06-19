@@ -79,10 +79,39 @@ export function initSchema(): void {
     CREATE TABLE IF NOT EXISTS task_slots (
       slot_key TEXT PRIMARY KEY, model_id TEXT, params TEXT
     );
+    CREATE TABLE IF NOT EXISTS templates (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL,
+      platform TEXT, product_category TEXT, description TEXT,
+      is_builtin INTEGER NOT NULL DEFAULT 1, version INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS template_slots (
+      id TEXT PRIMARY KEY, template_id TEXT NOT NULL, slot_code TEXT NOT NULL,
+      purpose TEXT NOT NULL, sequence INTEGER NOT NULL, scene_type TEXT,
+      size_preset TEXT, task_slot_key TEXT NOT NULL, prompt_skeleton TEXT NOT NULL,
+      required INTEGER NOT NULL DEFAULT 1, notes TEXT
+    );
+    CREATE TABLE IF NOT EXISTS platform_specs (
+      platform TEXT PRIMARY KEY, hero_size TEXT, detail_size TEXT,
+      hero_count INTEGER, rules TEXT, text_render_pref TEXT
+    );
     CREATE INDEX IF NOT EXISTS idx_media_product ON media(product_id);
     CREATE INDEX IF NOT EXISTS idx_media_asset ON media(asset_id);
     CREATE INDEX IF NOT EXISTS idx_jobs_product ON jobs(product_id);
     CREATE INDEX IF NOT EXISTS idx_api_calls_job ON api_calls(job_id);
     CREATE INDEX IF NOT EXISTS idx_models_vendor ON models(vendor_id);
+    CREATE INDEX IF NOT EXISTS idx_tplslots_template ON template_slots(template_id);
   `);
+  // media 表加列（SQLite 不支持 ADD COLUMN IF NOT EXISTS，try-catch 容错）
+  migrateAddColumn("media", "slot_code", "TEXT");
+  migrateAddColumn("media", "sort_order", "INTEGER");
+}
+
+/** 安全加列：已存在则忽略（SQLite ADD COLUMN 无 IF NOT EXISTS） */
+function migrateAddColumn(table: string, column: string, type: string): void {
+  try {
+    getRaw().exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  } catch {
+    // 列已存在，忽略
+  }
 }

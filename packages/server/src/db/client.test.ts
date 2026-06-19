@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { eq } from "drizzle-orm";
 import { getDb, getRaw, initSchema } from "./client";
-import { products, media, jobs, apiCalls, vendors, vendorCredentials, models, taskSlots } from "./schema";
+import { products, media, jobs, apiCalls, vendors, vendorCredentials, models, taskSlots, templates, templateSlots, platformSpecs } from "./schema";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -16,7 +16,7 @@ beforeEach(() => {
   // 直接用内存表测：关闭后重开到临时文件
   const raw = getRaw();
   // 清空所有表（幂等测试）
-  for (const t of ["products", "media", "jobs", "api_calls", "vendors", "vendor_credentials", "models", "task_slots"]) {
+  for (const t of ["products", "media", "jobs", "api_calls", "vendors", "vendor_credentials", "models", "task_slots", "templates", "template_slots", "platform_specs"]) {
     raw.exec(`DELETE FROM ${t}`);
   }
 });
@@ -106,5 +106,52 @@ describe("db schema CRUD", () => {
     const ts = db.select().from(taskSlots).where(eq(taskSlots.slotKey, "test-slot")).all()[0];
     expect(ts.modelId).toBe("testvendor:test-model");
     expect(ts.slotKey).toBe("test-slot");
+  });
+
+  it("media 含模板图位列 slotCode/sortOrder", () => {
+    const db = getDb();
+    db.insert(media).values({
+      id: "m-slot", assetId: null, productId: "p1", type: "image",
+      filePath: "/p1/image/x.png", thumbPath: null, modelId: null,
+      promptText: "hero", params: null, genState: "done", errorReason: null,
+      cost: null, width: 1024, height: 1024, duration: null,
+      slotCode: "H1", sortOrder: 1, createdAt: Date.now(),
+    }).run();
+    const got = db.select().from(media).where(eq(media.id, "m-slot")).all()[0];
+    expect(got.slotCode).toBe("H1");
+    expect(got.sortOrder).toBe(1);
+  });
+
+  it("templates + template_slots + platform_specs 关联", () => {
+    const db = getDb();
+    const now = Date.now();
+    db.insert(platformSpecs).values({
+      platform: "amazon", heroSize: "1024x1024", detailSize: "1024x1536",
+      heroCount: 5, rules: JSON.stringify({ firstImageWhiteBg: true }), textRenderPref: "英文",
+    }).run();
+    db.insert(templates).values({
+      id: "tpl-amazon-pdp", name: "亚马逊PDP套图", category: "pdp", platform: "amazon",
+      productCategory: null, description: "5主图+9详情页", isBuiltin: 1, version: 1,
+      createdAt: now, updatedAt: now,
+    }).run();
+    db.insert(templateSlots).values({
+      id: "ts1", templateId: "tpl-amazon-pdp", slotCode: "H1", purpose: "首图卖点",
+      sequence: 1, sceneType: "hero", sizePreset: "1024x1024", taskSlotKey: "main-image",
+      promptSkeleton: "white bg product photo of {category}, color {color}",
+      required: 1, notes: "白底无文字",
+    }).run();
+    db.insert(templateSlots).values({
+      id: "ts2", templateId: "tpl-amazon-pdp", slotCode: "D1", purpose: "首屏承接",
+      sequence: 6, sceneType: "hero", sizePreset: "1024x1536", taskSlotKey: "detail-page",
+      promptSkeleton: "detail page hero for {category}",
+      required: 1, notes: null,
+    }).run();
+
+    const slots = db.select().from(templateSlots).where(eq(templateSlots.templateId, "tpl-amazon-pdp")).all();
+    expect(slots).toHaveLength(2);
+    expect(slots[0].slotCode).toBe("H1");
+    expect(slots[1].slotCode).toBe("D1");
+    const ps = db.select().from(platformSpecs).where(eq(platformSpecs.platform, "amazon")).all()[0];
+    expect(ps.heroCount).toBe(5);
   });
 });

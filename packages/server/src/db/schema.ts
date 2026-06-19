@@ -33,6 +33,8 @@ export const media = sqliteTable("media", {
   width: integer("width"),
   height: integer("height"),
   duration: integer("duration"),
+  slotCode: text("slot_code"), // ⭐ 模板图位（H1/D3...），模板套图用
+  sortOrder: integer("sort_order"), // ⭐ 套图内序号
   createdAt: integer("created_at").notNull(),
 });
 
@@ -104,6 +106,45 @@ export const taskSlots = sqliteTable("task_slots", {
   params: text("params"), // JSON
 });
 
+/** 模板主表（可行性报告 §6.2） */
+export const templates = sqliteTable("templates", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  category: text("category").notNull(), // pdp|hero-only|social|tryon|seasonal|scene-swap
+  platform: text("platform"), // amazon|taobao|jd|douyin|shopify|null
+  productCategory: text("product_category"), // 服饰|3C|美妆|null
+  description: text("description"),
+  isBuiltin: integer("is_builtin").notNull().default(0),
+  version: integer("version").notNull().default(1),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+/** 模板图位（图片序列定义）⭐ 核心 */
+export const templateSlots = sqliteTable("template_slots", {
+  id: text("id").primaryKey(),
+  templateId: text("template_id").notNull(),
+  slotCode: text("slot_code").notNull(), // H1|D3|M1
+  purpose: text("purpose").notNull(), // 首图卖点|痛点放大
+  sequence: integer("sequence").notNull(),
+  sceneType: text("scene_type"), // hero|lifestyle|infographic|before-after
+  sizePreset: text("size_preset"), // 1024x1024|1024x1536
+  taskSlotKey: text("task_slot_key").notNull(), // 关联 task_slots（路由到生图模型）
+  promptSkeleton: text("prompt_skeleton").notNull(), // 含 {color} 等占位的骨架
+  required: integer("required").notNull().default(1),
+  notes: text("notes"), // 出图注意事项
+});
+
+/** 平台尺寸与规则 */
+export const platformSpecs = sqliteTable("platform_specs", {
+  platform: text("platform").primaryKey(),
+  heroSize: text("hero_size"),
+  detailSize: text("detail_size"),
+  heroCount: integer("hero_count"),
+  rules: text("rules"), // JSON
+  textRenderPref: text("text_render_pref"), // 中文|英文
+});
+
 export type DbProduct = typeof products.$inferSelect;
 export type DbMedia = typeof media.$inferSelect;
 export type DbJob = typeof jobs.$inferSelect;
@@ -112,3 +153,6 @@ export type DbVendor = typeof vendors.$inferSelect;
 export type DbVendorCredential = typeof vendorCredentials.$inferSelect;
 export type DbModel = typeof models.$inferSelect;
 export type DbTaskSlot = typeof taskSlots.$inferSelect;
+export type DbTemplate = typeof templates.$inferSelect;
+export type DbTemplateSlot = typeof templateSlots.$inferSelect;
+export type DbPlatformSpec = typeof platformSpecs.$inferSelect;
