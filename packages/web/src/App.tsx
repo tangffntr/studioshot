@@ -15,12 +15,16 @@ const API = {
     });
     return r.json();
   },
-  createJob: async (productId: string, instruction: string, mediaId: string): Promise<{ jobId: string }> => {
+  createJob: async (productId: string, instruction: string, mediaId: string, templateId?: string): Promise<{ jobId: string }> => {
     const r = await fetch("/api/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ productId, instruction, attachments: [mediaId] }),
+      body: JSON.stringify({ productId, instruction, attachments: [mediaId], templateId }),
     });
+    return r.json();
+  },
+  fetchTemplates: async (): Promise<Array<{ id: string; name: string; slotCount: number; description: string | null }>> => {
+    const r = await fetch("/api/templates");
     return r.json();
   },
 };
@@ -48,8 +52,13 @@ export default function App() {
   const [productId, setProductId] = createSignal<string | null>(null);
   const [mediaId, setMediaId] = createSignal<string | null>(null);
   const [error, setError] = createSignal("");
+  const [templates, setTemplates] = createSignal<Array<{ id: string; name: string; slotCount: number; description: string | null }>>([]);
+  const [selectedTpl, setSelectedTpl] = createSignal<string>("");
 
-  onMount(() => connectSSE());
+  onMount(async () => {
+    connectSSE();
+    try { setTemplates(await API.fetchTemplates()); } catch {}
+  });
 
   const onFile = (e: Event) => {
     const input = e.target as HTMLInputElement;
@@ -84,7 +93,7 @@ export default function App() {
     setState("mediaList", []);
     setState("jobProgress", 0);
     try {
-      const r = await API.createJob(productId()!, instruction(), mediaId()!);
+      const r = await API.createJob(productId()!, instruction(), mediaId()!, selectedTpl() || undefined);
       setState("currentJobId", r.jobId);
       setState("jobStatus", "queued");
     } catch (e: any) {
@@ -123,13 +132,35 @@ export default function App() {
             <div style={{ color: "#16a34a", "font-size": "13px", "margin-top": "4px" }}>✓ 已上传 (media: {mediaId()?.slice(0, 8)}…)</div>
           </Show>
 
-          <h3 style={{ "margin-top": "24px" }}>2. 提交出图任务</h3>
-          <textarea
-            value={instruction()}
-            onInput={(e) => setInstruction(e.currentTarget.value)}
-            rows={3}
-            style={{ ...inputStyle, "font-family": "inherit", "vertical-align": "top" }}
-          />
+          <h3 style={{ "margin-top": "24px" }}>2. 选择模板（可选）</h3>
+          <select
+            value={selectedTpl()}
+            onChange={(e) => setSelectedTpl(e.currentTarget.value)}
+            style={inputStyle}
+          >
+            <option value="">不使用模板（单图 Agent 模式）</option>
+            <For each={templates()}>
+              {(t) => <option value={t.id}>{t.name}（{t.slotCount} 图位）</option>}
+            </For>
+          </select>
+          <Show when={selectedTpl()}>
+            <div style={{ "font-size": "12px", color: "#7c3aed", "margin-top": "4px" }}>
+              ⚡ Pipeline 模式：将按模板确定性生成 {templates().find((t) => t.id === selectedTpl())?.slotCount} 张图（约 8-10 分钟）
+            </div>
+          </Show>
+
+          <h3 style={{ "margin-top": "24px" }}>3. 提交出图任务</h3>
+          <Show when={!selectedTpl()}>
+            <textarea
+              value={instruction()}
+              onInput={(e) => setInstruction(e.currentTarget.value)}
+              rows={3}
+              style={{ ...inputStyle, "font-family": "inherit", "vertical-align": "top" }}
+            />
+          </Show>
+          <Show when={selectedTpl()}>
+            <div style={{ ...inputStyle, color: "#888", "min-height": "40px" }}>模板将自动渲染所有图位的 prompt，无需手动输入指令</div>
+          </Show>
           <button onClick={submitJob} disabled={busy() || !productId()} style={btnStyle}>▶ 开始出图</button>
           <Show when={error()}>
             <div style={{ color: "#dc2626", "font-size": "13px", "margin-top": "4px" }}>{error()}</div>
