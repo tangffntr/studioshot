@@ -9,6 +9,7 @@ import { jobs } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { runAgentLoop } from "./loop";
 import { runPipelineJob } from "./pipeline";
+import { runSceneSwapJob } from "./scene-swap";
 import { eventBus } from "./event-bus";
 
 /** 执行一个 job（从 jobId） */
@@ -19,6 +20,20 @@ export async function runJob(jobId: string): Promise<void> {
 
   const payload = job.payload ? JSON.parse(job.payload) : {};
   const templateId: string | null = payload.templateId || null;
+  const jobMode: string = payload.mode || "";
+
+  // 分流：scene-swap 模式（保构图换产品）
+  if (jobMode === "scene-swap") {
+    const refScene = payload.referenceScene;
+    const product = payload.product || (payload.attachments || [])[0];
+    if (!refScene || !product) {
+      db.update(jobs).set({ status: "failed", error: "scene-swap 需提供 referenceScene 和 product mediaId", finishedAt: Date.now() }).where(eq(jobs.id, jobId)).run();
+      eventBus.publish({ type: "job.failed", jobId, error: "缺少 referenceScene 或 product" });
+      return;
+    }
+    await runSceneSwapJob(jobId, job.productId, refScene, product, payload.instruction);
+    return;
+  }
 
   // 分流：有 templateId 走 Pipeline（pipeline 自己管 job 状态）
   if (templateId) {

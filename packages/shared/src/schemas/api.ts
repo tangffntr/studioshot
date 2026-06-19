@@ -25,7 +25,9 @@ export const CreateJobRequest = z.object({
   instruction: z.string().min(1).describe("自然语言指令，如『生成一张亚马逊主图』"),
   attachments: z.array(z.string()).optional().describe("附带的 media id"),
   templateId: z.string().optional().describe("模板 id（有则走 pipeline 套图模式）"),
-  mode: z.enum(["agent", "pipeline"]).default("agent").describe("agent=主LLM自主编排，pipeline=确定性DAG"),
+  mode: z.enum(["agent", "pipeline", "scene-swap"]).default("agent").describe("agent=主LLM，pipeline=套图，scene-swap=保构图换产品"),
+  referenceScene: z.string().optional().describe("scene-swap 模式：对标场景图 mediaId"),
+  product: z.string().optional().describe("scene-swap 模式：要替换进去的产品图 mediaId"),
 });
 export type CreateJobRequest = z.infer<typeof CreateJobRequest>;
 

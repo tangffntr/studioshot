@@ -47,13 +47,16 @@ router.post("/api/products", async (req, res) => {
 router.post("/api/jobs", async (req, res) => {
   const parsed = CreateJobRequest.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
-  const { productId, instruction, attachments, templateId, mode } = parsed.data;
+  const { productId, instruction, attachments, templateId, mode, referenceScene, product } = parsed.data;
   const db = getDb();
   const jobId = crypto.randomUUID();
   const jobType = templateId ? "pipeline" : mode;
   db.insert(jobs).values({
     id: jobId, productId, type: jobType, instruction,
-    payload: JSON.stringify({ attachments: attachments || [], templateId: templateId || null }),
+    payload: JSON.stringify({
+      attachments: attachments || [], templateId: templateId || null,
+      mode, referenceScene: referenceScene || null, product: product || null,
+    }),
     status: "queued", progress: 0, result: null, error: null, createdAt: Date.now(), startedAt: null, finishedAt: null,
   }).run();
   // 异步执行（admit-then-run）
