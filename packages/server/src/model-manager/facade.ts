@@ -47,7 +47,7 @@ class ImageFacade {
     return this;
   }
 
-  async run(productId: string | null = null): Promise<this> {
+  async run(): Promise<this> {
     const resolved = resolveSlot(this.slotKey);
     const adapter = getAdapter(resolved.vendorId);
     if (!adapter.generateImage) throw new Error(`${resolved.vendorId} 不支持 generateImage`);
