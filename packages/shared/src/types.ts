@@ -101,6 +101,39 @@ export interface TaskSlotBinding {
   params: Record<string, unknown> | null;
 }
 
+// ---------- 模板套图类型 ----------
+/** 模板主记录 */
+export interface Template {
+  id: string;
+  name: string;
+  category: string;
+  platform: string | null;
+  productCategory: string | null;
+  description: string | null;
+  isBuiltin: boolean;
+  slotCount?: number; // 列表接口附带
+}
+
+/** 模板图位 */
+export interface TemplateSlot {
+  id: string;
+  templateId: string;
+  slotCode: string;
+  purpose: string;
+  sequence: number;
+  sceneType: string | null;
+  sizePreset: string | null;
+  taskSlotKey: string;
+  promptSkeleton: string;
+  required: boolean;
+  notes: string | null;
+}
+
+/** 模板详情（含图位） */
+export interface TemplateDetail extends Template {
+  slots: TemplateSlot[];
+}
+
 // ---------- SSE 事件 payload 类型 ----------
 export interface SseEvent {
   type: EventType;

@@ -5,7 +5,7 @@
 import { Router } from "express";
 import * as crypto from "node:crypto";
 import { getDb, initSchema } from "../db/client";
-import { products, media, jobs } from "../db/schema";
+import { products, media, jobs, templates, templateSlots } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { oss } from "../storage/oss";
 import { eventBus } from "../agent/event-bus";
@@ -46,16 +46,42 @@ router.post("/api/products", async (req, res) => {
 router.post("/api/jobs", async (req, res) => {
   const parsed = CreateJobRequest.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
-  const { productId, instruction, attachments, mode } = parsed.data;
+  const { productId, instruction, attachments, templateId, mode } = parsed.data;
   const db = getDb();
   const jobId = crypto.randomUUID();
+  const jobType = templateId ? "pipeline" : mode;
   db.insert(jobs).values({
-    id: jobId, productId, type: mode, instruction, payload: JSON.stringify({ attachments: attachments || [] }),
+    id: jobId, productId, type: jobType, instruction,
+    payload: JSON.stringify({ attachments: attachments || [], templateId: templateId || null }),
     status: "queued", progress: 0, result: null, error: null, createdAt: Date.now(), startedAt: null, finishedAt: null,
   }).run();
   // 异步执行（admit-then-run）
   runJob(jobId).catch((e) => console.error("[job] failed", e));
   res.json({ jobId });
+});
+
+/** GET /api/templates — 模板列表（含图位数） */
+router.get("/api/templates", (_req, res) => {
+  const db = getDb();
+  const tpls = db.select().from(templates).all();
+  const result = tpls.map((t) => {
+    const slotCount = db.select().from(templateSlots).where(eq(templateSlots.templateId, t.id)).all().length;
+    return { ...t, isBuiltin: !!t.isBuiltin, slotCount };
+  });
+  res.json(result);
+});
+
+/** GET /api/templates/:id — 模板详情（含全部图位） */
+router.get("/api/templates/:id", (req, res) => {
+  const db = getDb();
+  const tpl = db.select().from(templates).where(eq(templates.id, req.params.id)).all()[0];
+  if (!tpl) return res.status(404).json({ error: "模板不存在" });
+  const slots = db.select().from(templateSlots).where(eq(templateSlots.templateId, req.params.id)).all().sort((a, b) => a.sequence - b.sequence);
+  res.json({
+    ...tpl,
+    isBuiltin: !!tpl.isBuiltin,
+    slots: slots.map((s) => ({ ...s, required: !!s.required })),
+  });
 });
 
 /** GET /api/jobs/:id — 查任务状态 */
