@@ -11,6 +11,7 @@ import { runAgentLoop } from "./loop";
 import { runPipelineJob } from "./pipeline";
 import { runSceneSwapJob } from "./scene-swap";
 import { runBatchSkuJob } from "./batch-sku";
+import { runTryonJob } from "./tryon";
 import { eventBus } from "./event-bus";
 
 /** 执行一个 job（从 jobId） */
@@ -22,6 +23,18 @@ export async function runJob(jobId: string): Promise<void> {
   const payload = job.payload ? JSON.parse(job.payload) : {};
   const templateId: string | null = payload.templateId || null;
   const jobMode: string = payload.mode || "";
+
+  // 分流：tryon 模式（虚拟试穿）
+  if (jobMode === "tryon") {
+    const person = payload.person || (payload.attachments || [])[0];
+    if (!person) {
+      db.update(jobs).set({ status: "failed", error: "tryon 需提供 person mediaId", finishedAt: Date.now() }).where(eq(jobs.id, jobId)).run();
+      eventBus.publish({ type: "job.failed", jobId, error: "缺少 person" });
+      return;
+    }
+    await runTryonJob(jobId, job.productId, person, payload.topGarment, payload.bottomGarment);
+    return;
+  }
 
   // 分流：batch-sku 模式（批量场景替换）
   if (jobMode === "batch-sku") {

@@ -68,7 +68,12 @@ export function seedDefaults(): void {
   // 4. detail-page slot 也绑 grsai（模板详情页图位用）
   upsertSlot("detail-page", "grsai:gpt-image-2");
 
-  // 5. 内置模板
+  // 5. aliyun-tryon 供应商（虚拟试穿，凭证需用户在设置页配）
+  upsertVendor("aliyun-tryon", "阿里云 OutfitAnyone", "tryon", "aliyun-tryon", null, [passwordInput]);
+  upsertModel("aliyun-tryon:aitryon", "aliyun-tryon", "aitryon", "OutfitAnyone 试穿", "tryon", ["singleImage"]);
+  upsertSlot("tryon", "aliyun-tryon:aitryon");
+
+  // 6. 内置模板
   seedTemplates();
 }
 

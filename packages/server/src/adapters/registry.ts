@@ -5,10 +5,12 @@
 import type { VendorAdapter } from "./base";
 import { GrsaiAdapter } from "./grsai";
 import { OpenAIChatAdapter } from "./openai-chat";
+import { AliyunTryonAdapter } from "./aliyun-tryon";
 
 const registry: Record<string, VendorAdapter> = {
   grsai: new GrsaiAdapter(),
   "openai-chat": new OpenAIChatAdapter(),
+  "aliyun-tryon": new AliyunTryonAdapter(),
 };
 
 export function getAdapter(vendorId: string): VendorAdapter {

@@ -74,8 +74,8 @@ describe("GrsaiAdapter", () => {
 });
 
 describe("registry", () => {
-  it("注册了 grsai 和 openai-chat", () => {
-    expect(listAdapters().sort()).toEqual(["grsai", "openai-chat"]);
+  it("注册了 grsai、openai-chat、aliyun-tryon", () => {
+    expect(listAdapters().sort()).toEqual(["aliyun-tryon", "grsai", "openai-chat"]);
   });
 
   it("getAdapter 返回正确实例", () => {

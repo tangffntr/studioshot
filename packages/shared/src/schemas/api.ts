@@ -25,10 +25,13 @@ export const CreateJobRequest = z.object({
   instruction: z.string().min(1).describe("自然语言指令，如『生成一张亚马逊主图』"),
   attachments: z.array(z.string()).optional().describe("附带的 media id"),
   templateId: z.string().optional().describe("模板 id（有则走 pipeline 套图模式）"),
-  mode: z.enum(["agent", "pipeline", "scene-swap", "batch-sku"]).default("agent").describe("agent=主LLM，pipeline=套图，scene-swap=保构图换产品，batch-sku=批量SKU"),
-  referenceScene: z.string().optional().describe("scene-swap/batch-sku 模式：对标场景图 mediaId"),
-  product: z.string().optional().describe("scene-swap 模式：要替换进去的产品图 mediaId"),
-  skuProducts: z.array(z.string()).optional().describe("batch-sku 模式：多个 SKU 产品图 mediaId 数组"),
+  mode: z.enum(["agent", "pipeline", "scene-swap", "batch-sku", "tryon"]).default("agent").describe("agent/pipeline/scene-swap/batch-sku/tryon"),
+  referenceScene: z.string().optional().describe("scene-swap/batch-sku：对标场景图 mediaId"),
+  product: z.string().optional().describe("scene-swap：产品图 mediaId"),
+  skuProducts: z.array(z.string()).optional().describe("batch-sku：SKU 产品图数组"),
+  person: z.string().optional().describe("tryon：模特图 mediaId"),
+  topGarment: z.string().optional().describe("tryon：上装平铺图 mediaId"),
+  bottomGarment: z.string().optional().describe("tryon：下装平铺图 mediaId"),
 });
 export type CreateJobRequest = z.infer<typeof CreateJobRequest>;
 
