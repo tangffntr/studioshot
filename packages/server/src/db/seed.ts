@@ -1,10 +1,10 @@
 /**
  * server/db/seed.ts — 默认数据 seed（首次启动初始化）
- * 从 .env 读凭证，建立 grsai（生图）+ orchestrator（主 LLM）+ vlm（看图）供应商与模型绑定。
+ * 从 .env 读凭证，建立供应商/模型绑定 + 内置模板。
  * 幂等：已存在则跳过。
  */
-import { getDb, getRaw } from "./client";
-import { vendors, vendorCredentials, models, taskSlots } from "./schema";
+import { getDb } from "./client";
+import { vendors, vendorCredentials, models, taskSlots, templates, templateSlots, platformSpecs } from "./schema";
 import { eq } from "drizzle-orm";
 import { encryptCredentials } from "../model-manager/credentials";
 
@@ -65,6 +65,69 @@ export function seedDefaults(): void {
   // 3. vlm 看图分析（复用 orchestrator 端点）
   upsertSlot("vlm", `orchestrator:${orchModel}`);
 
-  // 确保表已建
-  void getRaw;
+  // 4. detail-page slot 也绑 grsai（模板详情页图位用）
+  upsertSlot("detail-page", "grsai:gpt-image-2");
+
+  // 5. 内置模板
+  seedTemplates();
+}
+
+/** 亚马逊 PDP 套图的 14 个图位定义（可行性报告 §6.3） */
+const AMAZON_PDP_SLOTS = [
+  // H1-H5 主图（1024x1024）
+  { slotCode: "H1", purpose: "首图卖点—一眼可懂的视觉主张", sequence: 1, sceneType: "hero", size: "1024x1024", taskSlot: "main-image", skeleton: "Clean white background product photo of a {category}, the main product centered, color {color}, material {material}. Studio lighting, sharp focus, e-commerce hero shot. No text overlay.", notes: "白底无文字，产品居中" },
+  { slotCode: "H2", purpose: "核心功能/质感特写", sequence: 2, sceneType: "detail-macro", size: "1024x1024", taskSlot: "main-image", skeleton: "Extreme close-up macro shot of a {color} {category} showing {material} texture and craftsmanship detail. White background, studio lighting.", notes: "突出材质工艺" },
+  { slotCode: "H3", purpose: "使用场景匹配", sequence: 3, sceneType: "lifestyle", size: "1024x1024", taskSlot: "main-image", skeleton: "Lifestyle scene photo of {color} {category} in realistic use environment, natural lighting, shallow depth of field, showing the product in context.", notes: "真实使用场景" },
+  { slotCode: "H4", purpose: "普通方案 vs 升级方案对比", sequence: 4, sceneType: "before-after", size: "1024x1024", taskSlot: "main-image", skeleton: "Side-by-side comparison: left shows ordinary {category}, right shows upgraded {color} {category}. Split frame, clean background, highlighting advantages.", notes: "左右对比突出优势" },
+  { slotCode: "H5", purpose: "优惠/物流/保障/CTA", sequence: 5, sceneType: "infographic", size: "1024x1024", taskSlot: "main-image", skeleton: "Infographic product image of {color} {category} with icons showing fast shipping, quality guarantee, and special offer. Clean modern layout, white background.", notes: "信息图+CTA" },
+  // D1-D9 详情页（1024x1536）
+  { slotCode: "D1", purpose: "首屏承接—为谁解决什么", sequence: 6, sceneType: "hero", size: "1024x1536", taskSlot: "detail-page", skeleton: "Detail page hero image for {color} {category}. Large product showcase with a clear value proposition at top. Professional e-commerce layout, {material} quality visible.", notes: "痛点+产品承诺" },
+  { slotCode: "D2", purpose: "痛点放大", sequence: 7, sceneType: "lifestyle", size: "1024x1536", taskSlot: "detail-page", skeleton: "Detail page section showing the problem/pain point that {category} solves. Relatable scenario, muted tones for problem depiction, vertical layout.", notes: "展示用户当前不便" },
+  { slotCode: "D3", purpose: "机制解释", sequence: 8, sceneType: "infographic", size: "1024x1536", taskSlot: "detail-page", skeleton: "Infographic explaining how the {color} {category} works. Cutaway or diagram style showing internal mechanism and {material} construction. Vertical detail page format.", notes: "产品原理可视化" },
+  { slotCode: "D4", purpose: "核心利益", sequence: 9, sceneType: "infographic", size: "1024x1536", taskSlot: "detail-page", skeleton: "Detail page showing 3-4 key benefits of {color} {category} with icons and short labels. Clean grid layout, vertical format, white background.", notes: "2-4利益信息图" },
+  { slotCode: "D5", purpose: "使用步骤", sequence: 10, sceneType: "infographic", size: "1024x1536", taskSlot: "detail-page", skeleton: "Step-by-step usage guide for {category}, 3-4 numbered steps with simple illustrations. Vertical timeline layout, clean background.", notes: "3-4步说明" },
+  { slotCode: "D6", purpose: "场景覆盖", sequence: 11, sceneType: "lifestyle", size: "1024x1536", taskSlot: "detail-page", skeleton: "Multiple usage scenarios of {color} {category} in different environments. Grid of lifestyle photos, vertical detail page format.", notes: "典型使用场景" },
+  { slotCode: "D7", purpose: "对比选择", sequence: 12, sceneType: "before-after", size: "1024x1536", taskSlot: "detail-page", skeleton: "Comparison detail page: ordinary {category} vs this {color} {category}. Detailed feature comparison, vertical format, highlighting superiority.", notes: "普通方案 vs 本品" },
+  { slotCode: "D8", purpose: "信任背书", sequence: 13, sceneType: "infographic", size: "1024x1536", taskSlot: "detail-page", skeleton: "Trust and endorsement detail page for {color} {category}. Showing material certification, quality inspection badges, warranty info. Professional vertical layout.", notes: "材料/质检/保障" },
+  { slotCode: "D9", purpose: "FAQ/风险逆转/CTA", sequence: 14, sceneType: "infographic", size: "1024x1536", taskSlot: "detail-page", skeleton: "FAQ and call-to-action detail page for {color} {category}. Common questions with answers, money-back guarantee, strong CTA at bottom. Vertical format.", notes: "常见问题+CTA" },
+];
+
+/** seed 内置模板（亚马逊 PDP 套图） */
+function seedTemplates(): void {
+  const db = getDb();
+  const now = Date.now();
+
+  // 平台规格
+  const psExists = db.select().from(platformSpecs).where(eq(platformSpecs.platform, "amazon")).all()[0];
+  if (!psExists) {
+    db.insert(platformSpecs).values({
+      platform: "amazon", heroSize: "1024x1024", detailSize: "1024x1536", heroCount: 5,
+      rules: JSON.stringify({ firstImageWhiteBg: true, noWatermark: true }),
+      textRenderPref: "英文",
+    }).run();
+  }
+
+  // 模板主记录
+  const tplId = "builtin-amazon-pdp";
+  const tplExists = db.select().from(templates).where(eq(templates.id, tplId)).all()[0];
+  if (!tplExists) {
+    db.insert(templates).values({
+      id: tplId, name: "亚马逊 PDP 标准套图", category: "pdp", platform: "amazon",
+      productCategory: null, description: "5 张主图 + 9 张详情页（行业标配信息架构）",
+      isBuiltin: 1, version: 1, createdAt: now, updatedAt: now,
+    }).run();
+  }
+
+  // 图位（幂等：按 templateId 清理后重插，便于骨架迭代）
+  const existingSlots = db.select().from(templateSlots).where(eq(templateSlots.templateId, tplId)).all();
+  if (existingSlots.length === 0) {
+    for (const s of AMAZON_PDP_SLOTS) {
+      db.insert(templateSlots).values({
+        id: `${tplId}-${s.slotCode}`, templateId: tplId, slotCode: s.slotCode,
+        purpose: s.purpose, sequence: s.sequence, sceneType: s.sceneType,
+        sizePreset: s.size, taskSlotKey: s.taskSlot, promptSkeleton: s.skeleton,
+        required: 1, notes: s.notes,
+      }).run();
+    }
+  }
 }
