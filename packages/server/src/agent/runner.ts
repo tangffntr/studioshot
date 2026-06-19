@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { runAgentLoop } from "./loop";
 import { runPipelineJob } from "./pipeline";
 import { runSceneSwapJob } from "./scene-swap";
+import { runBatchSkuJob } from "./batch-sku";
 import { eventBus } from "./event-bus";
 
 /** 执行一个 job（从 jobId） */
@@ -21,6 +22,19 @@ export async function runJob(jobId: string): Promise<void> {
   const payload = job.payload ? JSON.parse(job.payload) : {};
   const templateId: string | null = payload.templateId || null;
   const jobMode: string = payload.mode || "";
+
+  // 分流：batch-sku 模式（批量场景替换）
+  if (jobMode === "batch-sku") {
+    const refScene = payload.referenceScene;
+    const skuProducts: string[] = payload.skuProducts || [];
+    if (!refScene || skuProducts.length === 0) {
+      db.update(jobs).set({ status: "failed", error: "batch-sku 需提供 referenceScene 和 skuProducts 数组", finishedAt: Date.now() }).where(eq(jobs.id, jobId)).run();
+      eventBus.publish({ type: "job.failed", jobId, error: "缺少 referenceScene 或 skuProducts" });
+      return;
+    }
+    await runBatchSkuJob(jobId, job.productId, refScene, skuProducts);
+    return;
+  }
 
   // 分流：scene-swap 模式（保构图换产品）
   if (jobMode === "scene-swap") {
