@@ -89,6 +89,64 @@ router.get("/api/templates/:id", (req, res) => {
   });
 });
 
+/** POST /api/templates — 创建用户模板（含图位） */
+router.post("/api/templates", (req, res) => {
+  const db = getDb();
+  const { name, category, platform, productCategory, description, slots } = req.body || {};
+  if (!name || !category || !Array.isArray(slots)) return res.status(400).json({ error: "需提供 name, category, slots 数组" });
+  const tplId = `user-${crypto.randomUUID()}`;
+  const now = Date.now();
+  db.insert(templates).values({
+    id: tplId, name, category, platform: platform || null, productCategory: productCategory || null,
+    description: description || null, isBuiltin: 0, version: 1, createdAt: now, updatedAt: now,
+  }).run();
+  for (const s of slots) {
+    db.insert(templateSlots).values({
+      id: `${tplId}-${s.slotCode}`, templateId: tplId, slotCode: s.slotCode, purpose: s.purpose,
+      sequence: s.sequence, sceneType: s.sceneType || null, sizePreset: s.sizePreset || "1024x1024",
+      taskSlotKey: s.taskSlotKey || "main-image", promptSkeleton: s.promptSkeleton || "",
+      required: s.required === false ? 0 : 1, notes: s.notes || null,
+    }).run();
+  }
+  res.json({ id: tplId });
+});
+
+/** PUT /api/templates/:id — 更新用户模板（含图位整体替换） */
+router.put("/api/templates/:id", (req, res) => {
+  const db = getDb();
+  const tpl = db.select().from(templates).where(eq(templates.id, req.params.id)).all()[0];
+  if (!tpl) return res.status(404).json({ error: "模板不存在" });
+  if (tpl.isBuiltin) return res.status(403).json({ error: "内置模板不可修改" });
+  const { name, description, slots } = req.body || {};
+  db.update(templates).set({
+    ...(name && { name }), ...(description != null && { description }), updatedAt: Date.now(),
+  }).where(eq(templates.id, req.params.id)).run();
+  // 图位整体替换（先删后插）
+  if (Array.isArray(slots)) {
+    db.delete(templateSlots).where(eq(templateSlots.templateId, req.params.id)).run();
+    for (const s of slots) {
+      db.insert(templateSlots).values({
+        id: `${req.params.id}-${s.slotCode}-${crypto.randomUUID().slice(0, 8)}`, templateId: req.params.id,
+        slotCode: s.slotCode, purpose: s.purpose, sequence: s.sequence, sceneType: s.sceneType || null,
+        sizePreset: s.sizePreset || "1024x1024", taskSlotKey: s.taskSlotKey || "main-image",
+        promptSkeleton: s.promptSkeleton || "", required: s.required === false ? 0 : 1, notes: s.notes || null,
+      }).run();
+    }
+  }
+  res.json({ ok: true });
+});
+
+/** DELETE /api/templates/:id — 删除用户模板（内置不可删） */
+router.delete("/api/templates/:id", (req, res) => {
+  const db = getDb();
+  const tpl = db.select().from(templates).where(eq(templates.id, req.params.id)).all()[0];
+  if (!tpl) return res.status(404).json({ error: "模板不存在" });
+  if (tpl.isBuiltin) return res.status(403).json({ error: "内置模板不可删除" });
+  db.delete(templateSlots).where(eq(templateSlots.templateId, req.params.id)).run();
+  db.delete(templates).where(eq(templates.id, req.params.id)).run();
+  res.json({ ok: true });
+});
+
 /** GET /api/settings — 模型配置（供应商 + 凭证状态 + 模型 + 任务槽绑定） */
 router.get("/api/settings", (_req, res) => {
   const db = getDb();
