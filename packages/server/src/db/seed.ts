@@ -52,16 +52,18 @@ export function seedDefaults(): void {
   upsertModel("grsai:gpt-image-2", "grsai", "gpt-image-2", "GPT Image 2", "image", ["text", "singleImage", "multiReference"]);
   upsertSlot("main-image", "grsai:gpt-image-2");
 
-  // 2. orchestrator 主推理 LLM（MiMo-V2.5 多模态）
+  // 2. orchestrator 主推理 LLM（MiMo-V2.5 全模态，支持图片输入）
+  // 注意：mimo-v2.5 是全模态；mimo-v2.5-pro 是纯文本（不支持图片）
+  const orchModel = process.env.ORCHESTRATOR_MODEL || "mimo-v2.5";
   upsertVendor("orchestrator", "主推理 LLM", "vlm", "openai-chat", process.env.ORCHESTRATOR_BASE_URL || null, [passwordInput]);
   if (process.env.ORCHESTRATOR_API_KEY) {
     upsertCred("orchestrator", { apiKey: process.env.ORCHESTRATOR_API_KEY, baseUrl: process.env.ORCHESTRATOR_BASE_URL || "" });
   }
-  upsertModel(`orchestrator:${process.env.ORCHESTRATOR_MODEL || "mimo-v2.5"}`, "orchestrator", process.env.ORCHESTRATOR_MODEL || "mimo-v2.5", "主推理", "vlm", ["text", "image"]);
-  upsertSlot("orchestrator", `orchestrator:${process.env.ORCHESTRATOR_MODEL || "mimo-v2.5"}`);
+  upsertModel(`orchestrator:${orchModel}`, "orchestrator", orchModel, "主推理（全模态）", "vlm", ["text", "image"]);
+  upsertSlot("orchestrator", `orchestrator:${orchModel}`);
 
   // 3. vlm 看图分析（复用 orchestrator 端点）
-  upsertSlot("vlm", `orchestrator:${process.env.ORCHESTRATOR_MODEL || "mimo-v2.5"}`);
+  upsertSlot("vlm", `orchestrator:${orchModel}`);
 
   // 确保表已建
   void getRaw;

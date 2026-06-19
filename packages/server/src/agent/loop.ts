@@ -1,18 +1,16 @@
 /**
  * server/agent/loop.ts — 主 Agent 循环（照搬 opencode runner/llm.ts 结构，§5.4）
  *
- * 一个多模态主推理 LLM 驱动循环：
- *   1. streamText/generateText 调主 LLM，附带工具定义
+ * 一个多模态主推理 LLM 驱动循环（原生 OpenAI chat/completions，兼容 MiMo）：
+ *   1. 调主 LLM，附带 tools 定义
  *   2. 收集 tool_calls
- *   3. 并发执行工具（每个 execute + toModelOutput）
+ *   3. 执行工具（每个 execute + toModelOutput）
  *   4. 工具结果（含 file 图片）追加到 history
  *   5. 无 tool_call → 结束
  *   bounded by MAX_STEPS
  *
  * 这是首里程碑核心：让主 LLM 能「生图→看回→质检→必要时重试」。
  */
-import { createOpenAI } from "@ai-sdk/openai";
-import { generateText, tool, type CoreMessage } from "ai";
 import { listTools } from "../tools/registry";
 import type { Tool, Content } from "../tools/tool";
 import { resolveSlot } from "../model-manager/task-slots";
@@ -53,24 +51,48 @@ export interface AgentRunResult {
   mediaIds: string[];
 }
 
-/** 把工具的 Content[] 转成 AI SDK 消息内容（file→image part） */
-function contentToAiParts(contents: Content[]): Array<{ type: "text"; text: string } | { type: "image"; image: string }> {
-  return contents.map((c) => {
-    if (c.type === "text") return { type: "text" as const, text: c.text };
-    // file 内容转 image part（主 LLM 据此"看回"图）
-    return { type: "image" as const, image: `data:${c.mime};base64,${c.data}` };
-  });
-}
-
-/** 获取主推理 LLM 的配置（orchestrator slot） */
-function getOrchestratorClient() {
+/** 获取主推理 LLM 的配置（orchestrator slot）— 返回原生 fetch 所需 */
+function getOrchestratorConfig() {
   const resolved = resolveSlot("orchestrator");
   const db = getDb();
   const credRow = db.select().from(vendorCredentials).where(eq(vendorCredentials.vendorId, resolved.vendorId)).all()[0];
   if (!credRow) throw new Error(`主推理 LLM 供应商 ${resolved.vendorId} 未配置凭证`);
   const creds = decryptCredentials(credRow.valuesEnc);
-  const client = createOpenAI({ apiKey: creds.apiKey, baseURL: resolved.baseUrl || undefined });
-  return { client, model: resolved.modelName };
+  const baseUrl = (resolved.baseUrl || "").replace(/\/+$/, "");
+  return { apiKey: creds.apiKey, baseUrl, model: resolved.modelName };
+}
+
+/** 原生调 OpenAI 兼容 chat/completions（支持 tools + 多模态 image part） */
+async function callLLM(
+  cfg: { apiKey: string; baseUrl: string; model: string },
+  messages: any[],
+  tools: any[]
+): Promise<{ text: string; toolCalls: any[] }> {
+  const body: Record<string, unknown> = { model: cfg.model, messages, temperature: 0.7 };
+  if (tools.length) {
+    body.tools = tools;
+    body.tool_choice = "auto";
+  }
+  const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.apiKey}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    // 诊断：打印请求摘要便于排查供应商参数问题
+    console.error("[callLLM] 失败 body 摘要:", JSON.stringify(body).slice(0, 500));
+    throw new Error(`主 LLM 调用失败 ${res.status}: ${t.slice(0, 300)}`);
+  }
+  const data = (await res.json()) as any;
+  const msg = data?.choices?.[0]?.message;
+  const text = msg?.content || "";
+  const toolCalls = (msg?.tool_calls || []).map((tc: any) => ({
+    toolCallId: tc.id,
+    toolName: tc.function?.name,
+    args: tc.function?.arguments ? JSON.parse(tc.function.arguments) : {},
+  }));
+  return { text, toolCalls };
 }
 
 function emit(type: EventType, payload: Record<string, unknown>) {
@@ -79,15 +101,15 @@ function emit(type: EventType, payload: Record<string, unknown>) {
 
 /** 运行一次 Agent 循环 */
 export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResult> {
-  const { client, model } = getOrchestratorClient();
+  const cfg = getOrchestratorConfig();
   const allTools: Tool[] = listTools();
   const toolMap = new Map(allTools.map((t) => [t.name, t]));
 
-  // AI SDK tools：用 tool() 包裹，声明 schema 但不传 execute（我们自己执行以支持图片回灌）
-  const aiTools: Record<string, ReturnType<typeof tool>> = {};
-  for (const t of allTools) {
-    aiTools[t.name] = tool({ description: t.description, parameters: t.inputSchema });
-  }
+  // 原生 OpenAI tools 格式（文档证实 MiMo 支持）
+  const openaiTools = allTools.map((t) => ({
+    type: "function" as const,
+    function: { name: t.name, description: t.description, parameters: t.jsonSchema },
+  }));
 
   const ctx: ToolCtx = {
     jobId: opts.jobId,
@@ -95,8 +117,8 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResul
     emit: (e) => eventBus.publish(e as SseEvent),
   };
 
-  // 初始 history：系统提示 + 用户指令
-  const messages: CoreMessage[] = [
+  // 初始 history（原生 OpenAI 格式）
+  const messages: any[] = [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: opts.instruction + (opts.initialMediaIds.length ? `\n\n产品图 media id: ${opts.initialMediaIds.join(", ")}` : "") },
   ];
@@ -111,86 +133,73 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResul
     steps++;
     emit("job.progress" as EventType, { jobId: opts.jobId, progress: Math.min((steps / MAX_STEPS) * 90, 90), message: `Agent 思考中（第${steps}步）` });
 
-    // 调主 LLM（声明 tools 但不自动执行，tool_calls 返回后我们自己处理）
-    const result = await generateText({
-      model: client(model),
-      messages,
-      tools: aiTools,
-      maxSteps: 1, // 只跑一步，工具结果由我们手动回灌后再循环
-    });
+    // 原生调主 LLM（支持 tools + tool_choice:auto）
+    const { text: assistantText, toolCalls } = await callLLM(cfg, messages, openaiTools);
 
-    // 收集 assistant 回复
-    const assistantText = result.text || "";
     if (assistantText) {
       emit("agent.message" as EventType, { jobId: opts.jobId, text: assistantText });
-      messages.push({ role: "assistant", content: assistantText });
     }
 
-    // 收集 tool_calls
-    const toolCalls = result.toolCalls || [];
     if (toolCalls.length === 0) {
       // 无工具调用 → 循环结束
       emit("job.progress" as EventType, { jobId: opts.jobId, progress: 100, message: "完成" });
       return { finalText: assistantText, steps, toolCalls: toolCallsLog, mediaIds };
     }
 
-    // 把 assistant 的 tool_call 加入 history（AI SDK 要求）
+    // assistant 消息含 tool_calls（原生 OpenAI 格式：tool_calls 在 message 上）
+    // MiMo 严格要求 content 非空（不接受 null），给占位文本
     messages.push({
       role: "assistant",
-      content: toolCalls.map((tc) => ({
-        type: "tool-call" as const,
-        toolCallId: tc.toolCallId,
-        toolName: tc.toolName,
-        args: tc.args,
+      content: assistantText || "(调用工具中)",
+      tool_calls: toolCalls.map((tc) => ({
+        id: tc.toolCallId,
+        type: "function",
+        function: { name: tc.toolName, arguments: JSON.stringify(tc.args) },
       })),
-    } as CoreMessage);
+    });
 
     // 并发执行工具
-    const toolResults = await Promise.all(
-      toolCalls.map(async (tc) => {
-        const tool = toolMap.get(tc.toolName);
-        if (!tool) return { toolCallId: tc.toolCallId, toolName: tc.toolName, contents: [{ type: "text" as const, text: `未知工具: ${tc.toolName}` }] };
-        emit("tool.call" as EventType, { jobId: opts.jobId, toolName: tc.toolName, toolInput: tc.args });
-        toolCallsLog.push(tc.toolName);
-        try {
-          const output = await tool.execute(tc.args, ctx);
-          const contents = tool.toModelOutput(tc.args, output);
-          // 收集生成的 media id
-          if (tc.toolName === "generate_image" && output && typeof output === "object" && "mediaId" in output) {
-            mediaIds.push((output as any).mediaId);
-            emit("media.completed" as EventType, { jobId: opts.jobId, mediaId: (output as any).mediaId });
-          }
-          return { toolCallId: tc.toolCallId, toolName: tc.toolName, contents };
-        } catch (e: any) {
-          const errMsg = e?.message || String(e);
-          emit("tool.result" as EventType, { jobId: opts.jobId, toolName: tc.toolName, toolResult: { error: errMsg } });
-          return { toolCallId: tc.toolCallId, toolName: tc.toolName, contents: [{ type: "text" as const, text: `工具执行出错: ${errMsg}` }] };
-        }
-      })
-    );
+    for (const tc of toolCalls) {
+      const tool = toolMap.get(tc.toolName);
+      emit("tool.call" as EventType, { jobId: opts.jobId, toolName: tc.toolName, toolInput: tc.args });
+      toolCallsLog.push(tc.toolName);
 
-    // 工具结果回灌 history（含图片 image part，主 LLM 下一回合能看见）
-    messages.push({
-      role: "tool",
-      content: toolResults.map((tr) => {
-        const hasImage = tr.contents.some((c) => c.type === "file");
-        if (hasImage) {
-          // 含图片：用多模态 content
-          return {
-            type: "tool-result" as const,
-            toolCallId: tr.toolCallId,
-            toolName: tr.toolName,
-            content: contentToAiParts(tr.contents),
-          };
+      let toolContents: Content[];
+      try {
+        const output = await tool!.execute(tc.args, ctx);
+        toolContents = tool!.toModelOutput(tc.args, output);
+        if (tc.toolName === "generate_image" && output && typeof output === "object" && "mediaId" in output) {
+          mediaIds.push((output as any).mediaId);
+          emit("media.completed" as EventType, { jobId: opts.jobId, mediaId: (output as any).mediaId });
         }
-        return {
-          type: "tool-result" as const,
-          toolCallId: tr.toolCallId,
-          toolName: tr.toolName,
-          content: [{ type: "text" as const, text: tr.contents.map((c) => (c.type === "text" ? c.text : "")).join("\n") }],
-        };
-      }),
-    } as unknown as CoreMessage);
+      } catch (e: any) {
+        const errMsg = e?.message || String(e);
+        emit("tool.result" as EventType, { jobId: opts.jobId, toolName: tc.toolName, toolResult: { error: errMsg } });
+        toolContents = [{ type: "text", text: `工具执行出错: ${errMsg}` }];
+      }
+
+      // 工具结果回灌：
+      // tool message 只放纯文本（OpenAI 标准 tool role 不支持多模态 content，
+      // MiMo 严格遵循标准会报 text is not set）
+      const textParts = toolContents.filter((c) => c.type === "text").map((c) => (c as any).text || "");
+      const imageParts = toolContents.filter((c) => c.type === "file");
+
+      messages.push({
+        role: "tool",
+        tool_call_id: tc.toolCallId,
+        content: textParts.join("\n") || "(无文本输出)",
+      });
+
+      // 若工具产生图片，作为独立的 user message 回灌（user role 支持多模态 image_url）
+      // 主 LLM 下一回合能"看见"这张图（A3 闭环）
+      if (imageParts.length > 0) {
+        const userContent: any[] = [{ type: "text", text: `这是工具 ${tc.toolName} 生成的图片，请查看：` }];
+        for (const img of imageParts) {
+          userContent.push({ type: "image_url", image_url: { url: `data:${(img as any).mime};base64,${(img as any).data}` } });
+        }
+        messages.push({ role: "user", content: userContent });
+      }
+    }
   }
 
   // 超出最大步数
