@@ -12,9 +12,9 @@
  * 这是首里程碑核心：让主 LLM 能「生图→看回→质检→必要时重试」。
  */
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateText, type CoreMessage } from "ai";
+import { generateText, tool, type CoreMessage } from "ai";
 import { listTools } from "../tools/registry";
-import { toolsToOpenAIFormat, type Tool, type Content } from "../tools/tool";
+import type { Tool, Content } from "../tools/tool";
 import { resolveSlot } from "../model-manager/task-slots";
 import { decryptCredentials } from "../model-manager/credentials";
 import { getDb } from "../db/client";
@@ -81,8 +81,13 @@ function emit(type: EventType, payload: Record<string, unknown>) {
 export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResult> {
   const { client, model } = getOrchestratorClient();
   const allTools: Tool[] = listTools();
-  const toolFormats = toolsToOpenAIFormat(allTools);
   const toolMap = new Map(allTools.map((t) => [t.name, t]));
+
+  // AI SDK tools：用 tool() 包裹，声明 schema 但不传 execute（我们自己执行以支持图片回灌）
+  const aiTools: Record<string, ReturnType<typeof tool>> = {};
+  for (const t of allTools) {
+    aiTools[t.name] = tool({ description: t.description, parameters: t.inputSchema });
+  }
 
   const ctx: ToolCtx = {
     jobId: opts.jobId,
@@ -106,12 +111,12 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResul
     steps++;
     emit("job.progress" as EventType, { jobId: opts.jobId, progress: Math.min((steps / MAX_STEPS) * 90, 90), message: `Agent 思考中（第${steps}步）` });
 
-    // 调主 LLM
+    // 调主 LLM（声明 tools 但不自动执行，tool_calls 返回后我们自己处理）
     const result = await generateText({
       model: client(model),
       messages,
-      tools: toolFormats as any,
-      // 不自动执行工具（我们自己执行以支持 toModelOutput 图片回灌）
+      tools: aiTools,
+      maxSteps: 1, // 只跑一步，工具结果由我们手动回灌后再循环
     });
 
     // 收集 assistant 回复

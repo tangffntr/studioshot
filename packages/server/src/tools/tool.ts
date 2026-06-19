@@ -34,6 +34,8 @@ export interface ToolConfig<I, O> {
 export interface Tool<I = any, O = any> {
   name: string;
   description: string;
+  /** 原始 Zod schema（给 AI SDK tool()） */
+  inputSchema: ZodTypeAny;
   /** 给主 LLM 看的 JSON Schema */
   jsonSchema: Record<string, unknown>;
   execute: (input: I, ctx: ToolCtx) => Promise<O>;
@@ -42,30 +44,25 @@ export interface Tool<I = any, O = any> {
 
 /** 工具工厂 */
 export function make<I, O>(name: string, cfg: ToolConfig<I, O>): Tool<I, O> {
-  // zod-to-json-schema 带 name 会用 $ref 引用，不传 name 输出扁平结构（适合直接给 LLM）
   const schema = zodToJsonSchema(cfg.input) as Record<string, unknown>;
-  // 确保 type: object（zod object 转 JSON Schema 默认有）
   if (!schema.type) schema.type = "object";
   return {
     name,
     description: cfg.description,
+    inputSchema: cfg.input, // 保留原始 Zod 给 AI SDK
     jsonSchema: schema,
     execute: cfg.execute,
     toModelOutput: cfg.toModelOutput || (() => []),
   };
 }
 
-/** 把工具列表转成给主 LLM 的工具定义数组（OpenAI tools 格式） */
+/** 把工具列表转成给主 LLM 的工具定义数组（OpenAI tools 格式，备用） */
 export function toolsToOpenAIFormat(tools: Tool[]): Array<{
   type: "function";
   function: { name: string; description: string; parameters: Record<string, unknown> };
 }> {
   return tools.map((t) => ({
     type: "function" as const,
-    function: {
-      name: t.name,
-      description: t.description,
-      parameters: t.jsonSchema,
-    },
+    function: { name: t.name, description: t.description, parameters: t.jsonSchema },
   }));
 }
