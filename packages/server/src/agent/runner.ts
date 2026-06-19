@@ -12,6 +12,7 @@ import { runPipelineJob } from "./pipeline";
 import { runSceneSwapJob } from "./scene-swap";
 import { runBatchSkuJob } from "./batch-sku";
 import { runTryonJob } from "./tryon";
+import { runVideoJob } from "./video";
 import { eventBus } from "./event-bus";
 
 /** 执行一个 job（从 jobId） */
@@ -23,6 +24,18 @@ export async function runJob(jobId: string): Promise<void> {
   const payload = job.payload ? JSON.parse(job.payload) : {};
   const templateId: string | null = payload.templateId || null;
   const jobMode: string = payload.mode || "";
+
+  // 分流：video 模式（视频生成）
+  if (jobMode === "video") {
+    const source = (payload.attachments || [])[0];
+    if (!source) {
+      db.update(jobs).set({ status: "failed", error: "video 需提供首帧图（attachments[0]）", finishedAt: Date.now() }).where(eq(jobs.id, jobId)).run();
+      eventBus.publish({ type: "job.failed", jobId, error: "缺少首帧图" });
+      return;
+    }
+    await runVideoJob(jobId, job.productId, source, job.instruction, payload.duration);
+    return;
+  }
 
   // 分流：tryon 模式（虚拟试穿）
   if (jobMode === "tryon") {

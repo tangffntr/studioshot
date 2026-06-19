@@ -25,13 +25,14 @@ export const CreateJobRequest = z.object({
   instruction: z.string().min(1).describe("自然语言指令，如『生成一张亚马逊主图』"),
   attachments: z.array(z.string()).optional().describe("附带的 media id"),
   templateId: z.string().optional().describe("模板 id（有则走 pipeline 套图模式）"),
-  mode: z.enum(["agent", "pipeline", "scene-swap", "batch-sku", "tryon"]).default("agent").describe("agent/pipeline/scene-swap/batch-sku/tryon"),
-  referenceScene: z.string().optional().describe("scene-swap/batch-sku：对标场景图 mediaId"),
-  product: z.string().optional().describe("scene-swap：产品图 mediaId"),
-  skuProducts: z.array(z.string()).optional().describe("batch-sku：SKU 产品图数组"),
-  person: z.string().optional().describe("tryon：模特图 mediaId"),
-  topGarment: z.string().optional().describe("tryon：上装平铺图 mediaId"),
-  bottomGarment: z.string().optional().describe("tryon：下装平铺图 mediaId"),
+  mode: z.enum(["agent", "pipeline", "scene-swap", "batch-sku", "tryon", "video"]).default("agent"),
+  referenceScene: z.string().optional(),
+  product: z.string().optional(),
+  skuProducts: z.array(z.string()).optional(),
+  person: z.string().optional(),
+  topGarment: z.string().optional(),
+  bottomGarment: z.string().optional(),
+  duration: z.number().optional().describe("video 模式：视频时长秒数"),
 });
 export type CreateJobRequest = z.infer<typeof CreateJobRequest>;
 

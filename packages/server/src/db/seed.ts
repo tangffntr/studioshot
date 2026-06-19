@@ -73,7 +73,12 @@ export function seedDefaults(): void {
   upsertModel("aliyun-tryon:aitryon", "aliyun-tryon", "aitryon", "OutfitAnyone 试穿", "tryon", ["singleImage"]);
   upsertSlot("tryon", "aliyun-tryon:aitryon");
 
-  // 6. 内置模板
+  // 6. kling-video 供应商（视频生成，凭证需用户在设置页配）
+  upsertVendor("kling-video", "可灵视频", "video", "kling-video", null, [passwordInput]);
+  upsertModel("kling-video:kling", "kling-video", "kling", "可灵视频生成", "video", ["singleImage", "text"]);
+  upsertSlot("video", "kling-video:kling");
+
+  // 7. 内置模板
   seedTemplates();
 }
 
