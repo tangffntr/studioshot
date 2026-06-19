@@ -7,6 +7,7 @@
 import type { VendorAdapter, ChatRequest } from "./base";
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
+import { withRetry } from "../utils/retry";
 
 export class OpenAIChatAdapter implements VendorAdapter {
   category = "vlm" as const;
@@ -26,10 +27,10 @@ export class OpenAIChatAdapter implements VendorAdapter {
       content.push({ type: "image", image: img.startsWith("data:") ? img : `data:image/png;base64,${img}` });
     }
 
-    const result = await generateText({
+    const result = await withRetry(() => generateText({
       model: client(req.model),
       messages: [{ role: "user", content }],
-    });
+    }));
     return result.text;
   }
 }

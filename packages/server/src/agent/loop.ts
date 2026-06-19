@@ -13,6 +13,7 @@
  */
 import { listTools } from "../tools/registry";
 import type { Tool, Content } from "../tools/tool";
+import { withRetry } from "../utils/retry";
 import { resolveSlot } from "../model-manager/task-slots";
 import { decryptCredentials } from "../model-manager/credentials";
 import { getDb } from "../db/client";
@@ -81,11 +82,11 @@ async function callLLM(
     body.tools = tools;
     body.tool_choice = "auto";
   }
-  const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+  const res = await withRetry(() => fetch(`${cfg.baseUrl}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.apiKey}` },
     body: JSON.stringify(body),
-  });
+  }));
   if (!res.ok) {
     const t = await res.text();
     throw new Error(`主 LLM 调用失败 ${res.status}: ${t.slice(0, 300)}`);
