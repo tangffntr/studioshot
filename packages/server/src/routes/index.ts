@@ -5,12 +5,13 @@
 import { Router } from "express";
 import * as crypto from "node:crypto";
 import { getDb, initSchema } from "../db/client";
-import { products, media, jobs, templates, templateSlots } from "../db/schema";
+import { products, media, jobs, templates, templateSlots, vendors, vendorCredentials, models, taskSlots } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { oss } from "../storage/oss";
 import { eventBus } from "../agent/event-bus";
 import { runJob } from "../agent/runner";
 import { seedDefaults } from "../db/seed";
+import { encryptCredentials } from "../model-manager/credentials";
 import { CreateProductRequest, CreateJobRequest } from "@ecom/shared";
 import type { SseEvent } from "@ecom/shared";
 import path from "node:path";
@@ -82,6 +83,55 @@ router.get("/api/templates/:id", (req, res) => {
     isBuiltin: !!tpl.isBuiltin,
     slots: slots.map((s) => ({ ...s, required: !!s.required })),
   });
+});
+
+/** GET /api/settings — 模型配置（供应商 + 凭证状态 + 模型 + 任务槽绑定） */
+router.get("/api/settings", (_req, res) => {
+  const db = getDb();
+  const vs = db.select().from(vendors).all();
+  const allModels = db.select().from(models).all();
+  const slots = db.select().from(taskSlots).all();
+  // 凭证状态（不返回明文，只返回是否已配置）
+  const result = vs.map((v) => {
+    const cred = db.select().from(vendorCredentials).where(eq(vendorCredentials.vendorId, v.id)).all()[0];
+    const vendorModels = allModels.filter((m) => m.vendorId === v.id);
+    return {
+      id: v.id, name: v.name, category: v.category, adapter: v.adapter, baseUrl: v.baseUrl,
+      inputs: JSON.parse(v.inputs),
+      hasCredentials: !!cred && cred.enabled === 1,
+      models: vendorModels.map((m) => ({ id: m.id, modelName: m.modelName, displayName: m.displayName, type: m.type, enabled: !!m.enabled })),
+    };
+  });
+  res.json({ vendors: result, taskSlots: slots });
+});
+
+/** PUT /api/settings/credentials — 更新供应商凭证 */
+router.put("/api/settings/credentials", (req, res) => {
+  const { vendorId, values } = req.body || {};
+  if (!vendorId || !values) return res.status(400).json({ error: "需提供 vendorId 和 values" });
+  const db = getDb();
+  const existing = db.select().from(vendorCredentials).where(eq(vendorCredentials.vendorId, vendorId)).all()[0];
+  const enc = encryptCredentials(values);
+  if (existing) {
+    db.update(vendorCredentials).set({ valuesEnc: enc, enabled: 1, updatedAt: Date.now() }).where(eq(vendorCredentials.vendorId, vendorId)).run();
+  } else {
+    db.insert(vendorCredentials).values({ vendorId, valuesEnc: enc, enabled: 1, updatedAt: Date.now() }).run();
+  }
+  res.json({ ok: true });
+});
+
+/** PUT /api/settings/task-slot — 绑定模型到任务槽 */
+router.put("/api/settings/task-slot", (req, res) => {
+  const { slotKey, modelId } = req.body || {};
+  if (!slotKey || !modelId) return res.status(400).json({ error: "需提供 slotKey 和 modelId" });
+  const db = getDb();
+  const existing = db.select().from(taskSlots).where(eq(taskSlots.slotKey, slotKey)).all()[0];
+  if (existing) {
+    db.update(taskSlots).set({ modelId }).where(eq(taskSlots.slotKey, slotKey)).run();
+  } else {
+    db.insert(taskSlots).values({ slotKey, modelId, params: null }).run();
+  }
+  res.json({ ok: true });
 });
 
 /** GET /api/jobs/:id — 查任务状态 */

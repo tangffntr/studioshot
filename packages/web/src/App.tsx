@@ -200,6 +200,9 @@ export default function App() {
 
       {/* 素材画廊区 */}
       <GallerySection />
+
+      {/* 模型设置区 */}
+      <SettingsSection />
     </div>
   );
 }
@@ -279,6 +282,118 @@ function GallerySection() {
         </div>
       }>
         <div style={{ color: "#999" }}>该产品暂无素材。生成图片后会出现在这里。</div>
+      </Show>
+    </div>
+  );
+}
+
+/** 模型设置：供应商凭证状态 + 任务槽模型绑定 */
+function SettingsSection() {
+  const [settings, setSettings] = createSignal<any>(null);
+  const [editVendor, setEditVendor] = createSignal<string | null>(null);
+  const [credInputs, setCredInputs] = createSignal<Record<string, string>>({});
+  const [savedMsg, setSavedMsg] = createSignal("");
+
+  const load = async () => {
+    try { setSettings(await fetch("/api/settings").then((r) => r.json())); } catch {}
+  };
+  onMount(load);
+
+  const startEdit = (v: any) => {
+    setEditVendor(v.id);
+    const inputs: Record<string, string> = {};
+    v.inputs.forEach((i: any) => { inputs[i.key] = v.baseUrl && i.key === "baseUrl" ? v.baseUrl : ""; });
+    setCredInputs(inputs);
+    setSavedMsg("");
+  };
+
+  const saveCreds = async (vendorId: string) => {
+    await fetch("/api/settings/credentials", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vendorId, values: credInputs() }),
+    });
+    setEditVendor(null);
+    setSavedMsg(`${vendorId} 凭证已保存`);
+    await load();
+  };
+
+  const bindSlot = async (slotKey: string, modelId: string) => {
+    await fetch("/api/settings/task-slot", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slotKey, modelId }),
+    });
+    setSavedMsg(`${slotKey} 已绑定 ${modelId}`);
+    await load();
+  };
+
+  return (
+    <div style={{ "margin-top": "32px", "border-top": "1px solid #eee", "padding-top": "16px" }}>
+      <h2>⚙️ 模型设置</h2>
+      <Show when={savedMsg()}>
+        <div style={{ color: "#16a34a", "font-size": "13px", "margin-bottom": "8px" }}>✓ {savedMsg()}</div>
+      </Show>
+      <Show when={!settings()}>
+        <div style={{ color: "#999" }}>加载中...</div>
+      </Show>
+      <Show when={settings()}>
+        <div style={{ display: "flex", gap: "16px", "flex-wrap": "wrap" }}>
+          <For each={settings().vendors || []}>
+            {(v: any) => (
+              <div style={{ border: "1px solid #ddd", "border-radius": "8px", padding: "12px", "min-width": "260px" }}>
+                <div style={{ "font-weight": 600 }}>{v.name}</div>
+                <div style={{ "font-size": "12px", color: "#888", "margin-bottom": "8px" }}>{v.id} · {v.adapter}</div>
+                <div style={{ "font-size": "12px", "margin-bottom": "6px" }}>
+                  凭证：<span style={{ color: v.hasCredentials ? "#16a34a" : "#dc2626" }}>{v.hasCredentials ? "✓ 已配置" : "✗ 未配置"}</span>
+                </div>
+                <Show when={editVendor() === v.id} fallback={
+                  <button onClick={() => startEdit(v)} style={{ ...btnStyle, "margin-top": "0", padding: "4px 10px", "font-size": "12px" }}>
+                    {v.hasCredentials ? "修改凭证" : "配置凭证"}
+                  </button>
+                }>
+                  <For each={v.inputs}>
+                    {(input: any) => (
+                      <div style={{ "margin-top": "4px" }}>
+                        <input
+                          type={input.type}
+                          placeholder={input.label}
+                          value={credInputs()[input.key] || ""}
+                          onInput={(e) => setCredInputs({ ...credInputs(), [input.key]: e.currentTarget.value })}
+                          style={{ ...inputStyle, padding: "4px", "font-size": "12px" }}
+                        />
+                      </div>
+                    )}
+                  </For>
+                  <div style={{ "margin-top": "6px" }}>
+                    <button onClick={() => saveCreds(v.id)} style={{ ...btnStyle, "margin-top": "0", padding: "4px 10px", "font-size": "12px" }}>保存</button>
+                    <button onClick={() => setEditVendor(null)} style={{ ...btnStyle, "margin-top": "0", "margin-left": "4px", padding: "4px 10px", "font-size": "12px", background: "#888" }}>取消</button>
+                  </div>
+                </Show>
+              </div>
+            )}
+          </For>
+        </div>
+
+        <h3 style={{ "margin-top": "20px" }}>任务槽绑定</h3>
+        <div style={{ "font-size": "12px", color: "#888", "margin-bottom": "8px" }}>每个任务槽决定该能力用哪个模型</div>
+        <For each={settings().taskSlots || []}>
+          {(slot: any) => {
+            const allModels = (settings().vendors || []).flatMap((v: any) => v.models);
+            return (
+              <div style={{ display: "flex", gap: "8px", "align-items": "center", "margin-bottom": "6px" }}>
+                <span style={{ "min-width": "100px", "font-weight": 500, "font-size": "13px" }}>{slot.slotKey}</span>
+                <select
+                  value={slot.modelId || ""}
+                  onChange={(e) => bindSlot(slot.slotKey, e.currentTarget.value)}
+                  style={{ ...inputStyle, width: "auto", "font-size": "12px" }}
+                >
+                  <For each={allModels}>
+                    {(m: any) => <option value={m.id}>{m.id}</option>}
+                  </For>
+                </select>
+              </div>
+            );
+          }}
+        </For>
       </Show>
     </div>
   );
