@@ -197,6 +197,89 @@ export default function App() {
           </Show>
         </div>
       </div>
+
+      {/* 素材画廊区 */}
+      <GallerySection />
+    </div>
+  );
+}
+
+/** 素材画廊：按产品查看历史图，含 slotCode 标签、下载、删除 */
+function GallerySection() {
+  const [galleryProducts, setGalleryProducts] = createSignal<Array<{ id: string; name: string }>>([]);
+  const [selProduct, setSelProduct] = createSignal<string>("");
+  const [galleryMedia, setGalleryMedia] = createSignal<Array<any>>([]);
+  const [confirmDel, setConfirmDel] = createSignal<string | null>(null);
+
+  const refreshProducts = async () => {
+    const r = await fetch("/api/products").then((r) => r.json());
+    setGalleryProducts(r);
+    if (r.length && !selProduct()) { setSelProduct(r[0].id); await loadMedia(r[0].id); }
+    else if (selProduct()) { await loadMedia(selProduct()); } // 刷新当前产品媒体
+  };
+
+  const loadMedia = async (pid: string) => {
+    const r = await fetch(`/api/media?productId=${pid}`).then((r) => r.json());
+    setGalleryMedia(r);
+  };
+
+  const deleteMedia = async (mid: string) => {
+    await fetch(`/api/media/${mid}`, { method: "DELETE" });
+    setConfirmDel(null);
+    await loadMedia(selProduct());
+  };
+
+  onMount(() => {
+    refreshProducts();
+    // 自动刷新（5s，便于看到生成中的新图 + 上传后的新产品）
+    setInterval(refreshProducts, 5000);
+  });
+
+  return (
+    <div style={{ "margin-top": "32px", "border-top": "1px solid #eee", "padding-top": "16px" }}>
+      <h2>📁 素材画廊</h2>
+      <div style={{ display: "flex", gap: "8px", "align-items": "center", "margin-bottom": "12px" }}>
+        <select
+          value={selProduct()}
+          onChange={async (e) => { setSelProduct(e.currentTarget.value); await loadMedia(e.currentTarget.value); }}
+          style={{ ...inputStyle, width: "auto" }}
+        >
+          <For each={galleryProducts()}>
+            {(p) => <option value={p.id}>{p.name}</option>}
+          </For>
+        </select>
+        <button onClick={() => refreshProducts()} style={{ ...btnStyle, "margin-top": "0", padding: "6px 12px" }}>刷新</button>
+        <span style={{ "font-size": "12px", color: "#888" }}>{galleryMedia().length} 张图</span>
+      </div>
+
+      <Show when={galleryMedia().length === 0} fallback={
+        <div style={{ display: "grid", "grid-template-columns": "repeat(auto-fill, minmax(160px, 1fr))", gap: "12px" }}>
+          <For each={galleryMedia()}>
+            {(m) => (
+              <div style={{ border: "1px solid #ddd", "border-radius": "6px", padding: "6px", background: "#fff" }}>
+                <img src={m.url} style={{ width: "100%", height: "140px", "object-fit": "cover", "border-radius": "4px" }} />
+                <Show when={m.slotCode}>
+                  <span style={{ "font-size": "10px", background: "#2563eb", color: "#fff", padding: "1px 5px", "border-radius": "3px", "margin-top": "4px", display: "inline-block" }}>{m.slotCode}</span>
+                </Show>
+                <Show when={m.sortOrder}>
+                  <span style={{ "font-size": "10px", color: "#888", "margin-left": "4px" }}>#{m.sortOrder}</span>
+                </Show>
+                <div style={{ display: "flex", gap: "4px", "margin-top": "4px" }}>
+                  <a href={m.url} download="" style={{ "font-size": "11px", color: "#2563eb" }}>下载</a>
+                  <Show when={confirmDel() === m.id} fallback={
+                    <a href="#" onClick={(e) => { e.preventDefault(); setConfirmDel(m.id); }} style={{ "font-size": "11px", color: "#dc2626", "margin-left": "8px" }}>删除</a>
+                  }>
+                    <a href="#" onClick={(e) => { e.preventDefault(); deleteMedia(m.id); }} style={{ "font-size": "11px", color: "#dc2626", "margin-left": "8px" }}>确认删除</a>
+                    <a href="#" onClick={(e) => { e.preventDefault(); setConfirmDel(null); }} style={{ "font-size": "11px", color: "#888", "margin-left": "4px" }}>取消</a>
+                  </Show>
+                </div>
+              </div>
+            )}
+          </For>
+        </div>
+      }>
+        <div style={{ color: "#999" }}>该产品暂无素材。生成图片后会出现在这里。</div>
+      </Show>
     </div>
   );
 }

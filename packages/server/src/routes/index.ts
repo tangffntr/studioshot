@@ -99,7 +99,31 @@ router.get("/api/media", (req, res) => {
   const list = pid
     ? db.select().from(media).where(eq(media.productId, pid)).all()
     : db.select().from(media).all();
+  // 按 sortOrder/slotCode 排序（套图内有序展示）
+  list.sort((a, b) => {
+    if (a.sortOrder != null && b.sortOrder != null) return a.sortOrder - b.sortOrder;
+    return a.createdAt - b.createdAt;
+  });
   res.json(list.map((m) => ({ ...m, url: oss.getFileUrl(m.filePath) })));
+});
+
+/** GET /api/media/:id — 单图详情（含 prompt） */
+router.get("/api/media/:id", (req, res) => {
+  const db = getDb();
+  const m = db.select().from(media).where(eq(media.id, req.params.id)).all()[0];
+  if (!m) return res.status(404).json({ error: "not found" });
+  res.json({ ...m, url: oss.getFileUrl(m.filePath) });
+});
+
+/** DELETE /api/media/:id — 删除媒体（同步删 OSS 文件） */
+router.delete("/api/media/:id", async (req, res) => {
+  const db = getDb();
+  const m = db.select().from(media).where(eq(media.id, req.params.id)).all()[0];
+  if (!m) return res.status(404).json({ error: "not found" });
+  await oss.deleteFile(m.filePath);
+  if (m.thumbPath) await oss.deleteFile(m.thumbPath).catch(() => {});
+  db.delete(media).where(eq(media.id, req.params.id)).run();
+  res.json({ ok: true });
 });
 
 /** GET /api/products — 产品列表 */
