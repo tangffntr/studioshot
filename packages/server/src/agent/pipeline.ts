@@ -20,6 +20,7 @@ import { eq } from "drizzle-orm";
 import { oss } from "../storage/oss";
 import { Model } from "../model-manager/facade";
 import { renderAllSlots, type ProductAttributes, type RenderedSlot } from "../template/render";
+import { generateStyleLock, applyStyleLock } from "../template/style-lock";
 import { eventBus } from "./event-bus";
 import type { EventType, SseEvent } from "@ecom/shared";
 
@@ -87,8 +88,11 @@ export async function runPipelineJob(jobId: string, templateId: string, productI
     console.log(`[pipeline] job=${jobId.slice(0,8)} 分析完成:`, JSON.stringify(attrs));
     emit("agent.message" as EventType, { jobId, text: `产品分析：${attrs.category || "product"}，颜色 ${attrs.color || "neutral"}，材质 ${attrs.material || "premium"}` });
 
-    // 3. 渲染全部图位 prompt
+    // 3. 渲染全部图位 prompt + 注入 Campaign Style Lock（整套图风格一致）
     const rendered: RenderedSlot[] = renderAllSlots(slots as any, attrs);
+    const styleLock = generateStyleLock(attrs, tpl.platform || undefined);
+    applyStyleLock(rendered, styleLock);
+    console.log(`[pipeline] job=${jobId.slice(0,8)} style lock 已生成`);
 
     // 4. 读源图 base64（图生图参考，保证产品保真）
     const srcMedia = db.select().from(media).where(eq(media.id, sourceMediaId)).all()[0];
