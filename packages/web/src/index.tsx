@@ -1,8 +1,6 @@
-// @ecom/web 入口（占位）
-// Task 2.4/2.5 将在此实现 SSE 客户端与对话工作台。
+/* web/src/index.tsx — 入口 */
 import { render } from "solid-js/web";
+import App from "./App";
 
 const root = document.getElementById("root");
-if (root) {
-  render(() => <div>[@ecom/web] placeholder — see docs/plans/2026-06-19-ecom-image-agent.md</div>, root);
-}
+if (root) render(() => <App />, root);
