@@ -37,3 +37,6 @@ coverage/
 
 # 验证产物（保留特定证据用 git add -f）
 data/verify/
+
+# 测试上传的产品图残留
+data/oss/[0-9a-f]/
