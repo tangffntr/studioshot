@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 export interface ResolvedModel {
   modelId: string;
   vendorId: string;
+  adapter: string; // ⭐ 适配器标识（如 openai-chat/grsai），用于查 registry
   modelName: string; // API 实际模型名
   baseUrl: string | null;
 }
@@ -26,6 +27,7 @@ export function resolveSlot(slotKey: string): ResolvedModel {
   return {
     modelId: model.id,
     vendorId: vendor.id,
+    adapter: vendor.adapter,
     modelName: model.modelName,
     baseUrl: vendor.baseUrl,
   };

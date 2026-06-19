@@ -49,7 +49,7 @@ class ImageFacade {
 
   async run(): Promise<this> {
     const resolved = resolveSlot(this.slotKey);
-    const adapter = getAdapter(resolved.vendorId);
+    const adapter = getAdapter(resolved.adapter);
     if (!adapter.generateImage) throw new Error(`${resolved.vendorId} 不支持 generateImage`);
 
     // 取凭证
@@ -137,7 +137,7 @@ class ChatFacade {
 
   async run(): Promise<string> {
     const resolved = resolveSlot(this.slotKey);
-    const adapter = getAdapter(resolved.vendorId);
+    const adapter = getAdapter(resolved.adapter);
     if (!adapter.chat) throw new Error(`${resolved.vendorId} 不支持 chat`);
 
     const db = getDb();

@@ -24,16 +24,24 @@ import type { ToolCtx } from "../tools/tool";
 
 const MAX_STEPS = 25;
 
-const SYSTEM_PROMPT = `你是一个电商出图 Agent。你可以调用工具来分析产品、生成图片、质检。
-工作流程：
-1. 先用 analyze_product 分析用户上传的产品图
-2. 用 generate_image 生成所需图片（传入产品图作参考以保证保真）
-3. 用 check_quality 质检生成的图
-4. 若质检不通过，调整 prompt 重新 generate_image
-5. 全部满意后，用一句话总结你生成了哪些图（media id）
+const SYSTEM_PROMPT = `你是一个电商出图 Agent，负责根据用户指令生成电商图片。
 
-注意：generate_image 后你会在回复里看到生成的图，据此判断是否需要重做。
-完成所有工作后，直接回复总结，不再调用工具。`;
+工作流程（严格按序执行，不要跳步，不要重复）：
+1. 调用 analyze_product 分析产品图（只调一次）
+2. 调用 generate_image 生成用户要求的图片（通常只需 1 张；除非用户明确要求多张）
+3. 调用 check_quality 质检生成的图
+4. 根据质检结果决定：
+   - 质检通过（passed=true）→ 直接输出最终总结文本，不再调用任何工具
+   - 质检不通过（passed=false）→ 最多重试 1 次 generate_image，然后再质检，之后无论结果都输出总结
+
+收敛规则（非常重要）：
+- 你最多生成 2 张图。生成 + 质检后，必须用纯文本输出总结并结束。
+- 输出总结时：不要再调用任何工具，直接回复文字。
+- 总结格式：「已完成：生成了 N 张图（media id: ...）。质检结论：...」
+
+注意：
+- generate_image 后你会收到生成的图片，请基于它判断，不要无理由重复生成。
+- 如果用户只要 1 张图，生成 1 张 + 质检 1 次即可结束。`;
 
 export interface AgentRunOptions {
   jobId: string;
@@ -80,8 +88,6 @@ async function callLLM(
   });
   if (!res.ok) {
     const t = await res.text();
-    // 诊断：打印请求摘要便于排查供应商参数问题
-    console.error("[callLLM] 失败 body 摘要:", JSON.stringify(body).slice(0, 500));
     throw new Error(`主 LLM 调用失败 ${res.status}: ${t.slice(0, 300)}`);
   }
   const data = (await res.json()) as any;
@@ -131,17 +137,19 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResul
 
   while (steps < MAX_STEPS) {
     steps++;
+    console.log(`[agent] job=${opts.jobId.slice(0,8)} step=${steps}`);
     emit("job.progress" as EventType, { jobId: opts.jobId, progress: Math.min((steps / MAX_STEPS) * 90, 90), message: `Agent 思考中（第${steps}步）` });
 
     // 原生调主 LLM（支持 tools + tool_choice:auto）
     const { text: assistantText, toolCalls } = await callLLM(cfg, messages, openaiTools);
 
-    if (assistantText) {
+    if (assistantText && assistantText !== "(调用工具中)") {
       emit("agent.message" as EventType, { jobId: opts.jobId, text: assistantText });
     }
 
     if (toolCalls.length === 0) {
       // 无工具调用 → 循环结束
+      console.log(`[agent] job=${opts.jobId.slice(0,8)} 完成 step=${steps}`);
       emit("job.progress" as EventType, { jobId: opts.jobId, progress: 100, message: "完成" });
       return { finalText: assistantText, steps, toolCalls: toolCallsLog, mediaIds };
     }
@@ -174,6 +182,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResul
         }
       } catch (e: any) {
         const errMsg = e?.message || String(e);
+        console.error(`[agent] 工具 ${tc.toolName} 出错:`, errMsg);
         emit("tool.result" as EventType, { jobId: opts.jobId, toolName: tc.toolName, toolResult: { error: errMsg } });
         toolContents = [{ type: "text", text: `工具执行出错: ${errMsg}` }];
       }
