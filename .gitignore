@@ -34,3 +34,6 @@ Thumbs.db
 
 # Test
 coverage/
+
+# 验证产物（保留特定证据用 git add -f）
+data/verify/
