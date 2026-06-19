@@ -1,0 +1,16 @@
+{
+  "name": "ecom-image-agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "电商出图全流程 Agent + Skill 可交互 Web 应用",
+  "scripts": {
+    "dev:server": "pnpm --filter @ecom/server dev",
+    "dev:web": "pnpm --filter @ecom/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  }
+}

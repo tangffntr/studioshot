@@ -1,0 +1,36 @@
+{
+  "name": "@ecom/server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "电商出图 Agent 后端（Express + TS）",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "script": "tsx"
+  },
+  "dependencies": {
+    "@ecom/shared": "workspace:*",
+    "@ai-sdk/openai": "^0.0.40",
+    "ai": "^3.4.0",
+    "better-sqlite3": "^11.0.0",
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.31.0",
+    "express": "^4.19.2",
+    "is-path-inside": "^4.0.0",
+    "sharp": "^0.33.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.10",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "drizzle-kit": "^0.22.0",
+    "tsx": "^4.15.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}

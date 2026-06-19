@@ -1,0 +1,21 @@
+{
+  "name": "@ecom/shared",
+  "version": "0.0.0",
+  "private": true,
+  "description": "共享类型与 Zod schema（前后端共用）",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}
