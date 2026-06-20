@@ -28,9 +28,9 @@ export const generateImageTool = make<{ prompt: string; referenceMediaIds: strin
       "生成电商图（主图/场景图）。传入 prompt 和可选参考产品图（图生图保真）。生成后你会看到结果图，可判断是否需要重做。",
     input: GenerateImageInput,
     async execute(input, ctx) {
-      // 读参考图
+      // 读参考图（无图时 referenceMediaIds 可能为空，兜底空数组）
       const refs: string[] = [];
-      for (const mid of input.referenceMediaIds) {
+      for (const mid of input.referenceMediaIds || []) {
         refs.push(await readMediaBase64(mid));
       }
       const productId = ctx.productId;
