@@ -40,3 +40,6 @@ data/verify/
 
 # 测试上传的产品图残留
 data/oss/[0-9a-f]/
+
+data/app.sqlite-wal
+data/app.sqlite-shm
