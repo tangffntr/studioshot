@@ -11,7 +11,7 @@ import { oss } from "../storage/oss";
 import { eventBus } from "../agent/event-bus";
 import { runJob } from "../agent/runner";
 import { seedDefaults } from "../db/seed";
-import { encryptCredentials } from "../model-manager/credentials";
+import { encryptCredentials, decryptCredentials } from "../model-manager/credentials";
 import { CreateProductRequest, CreateJobRequest } from "@ecom/shared";
 import type { SseEvent } from "@ecom/shared";
 import path from "node:path";
@@ -149,38 +149,50 @@ router.delete("/api/templates/:id", (req, res) => {
   res.json({ ok: true });
 });
 
-/** GET /api/settings — 模型配置（供应商 + 凭证状态 + 模型 + 任务槽绑定） */
+/** GET /api/settings — 模型配置（供应商 + 凭证值 + 模型 + 任务槽绑定） */
 router.get("/api/settings", (_req, res) => {
   const db = getDb();
   const vs = db.select().from(vendors).all();
   const allModels = db.select().from(models).all();
   const slots = db.select().from(taskSlots).all();
-  // 凭证状态（不返回明文，只返回是否已配置）
   const result = vs.map((v) => {
     const cred = db.select().from(vendorCredentials).where(eq(vendorCredentials.vendorId, v.id)).all()[0];
+    let credValues: Record<string, string> = {};
+    let apiKey = "";
+    let baseUrl = v.baseUrl || "";
+    if (cred) {
+      try { credValues = decryptCredentials(cred.valuesEnc); apiKey = credValues.apiKey || ""; if (credValues.baseUrl) baseUrl = credValues.baseUrl; } catch {}
+    }
     const vendorModels = allModels.filter((m) => m.vendorId === v.id);
     return {
-      id: v.id, name: v.name, category: v.category, adapter: v.adapter, baseUrl: v.baseUrl,
-      inputs: JSON.parse(v.inputs),
-      hasCredentials: !!cred && cred.enabled === 1,
+      id: v.id, name: v.name, category: v.category, adapter: v.adapter,
+      apiKey, baseUrl,
+      hasCredentials: !!cred && cred.enabled === 1 && !!apiKey,
       models: vendorModels.map((m) => ({ id: m.id, modelName: m.modelName, displayName: m.displayName, type: m.type, enabled: !!m.enabled })),
     };
   });
   res.json({ vendors: result, taskSlots: slots });
 });
 
-/** PUT /api/settings/credentials — 更新供应商凭证 */
+/** PUT /api/settings/credentials — 更新供应商凭证（apiKey + baseUrl） */
 router.put("/api/settings/credentials", (req, res) => {
-  const { vendorId, values } = req.body || {};
-  if (!vendorId || !values) return res.status(400).json({ error: "需提供 vendorId 和 values" });
+  const { vendorId, apiKey, baseUrl } = req.body || {};
+  if (!vendorId) return res.status(400).json({ error: "需提供 vendorId" });
   const db = getDb();
+  // 合并已有值
   const existing = db.select().from(vendorCredentials).where(eq(vendorCredentials.vendorId, vendorId)).all()[0];
+  let values: Record<string, string> = {};
+  if (existing) { try { values = decryptCredentials(existing.valuesEnc); } catch {} }
+  if (apiKey !== undefined) values.apiKey = apiKey;
+  if (baseUrl !== undefined) values.baseUrl = baseUrl;
   const enc = encryptCredentials(values);
   if (existing) {
     db.update(vendorCredentials).set({ valuesEnc: enc, enabled: 1, updatedAt: Date.now() }).where(eq(vendorCredentials.vendorId, vendorId)).run();
   } else {
     db.insert(vendorCredentials).values({ vendorId, valuesEnc: enc, enabled: 1, updatedAt: Date.now() }).run();
   }
+  // 同步 vendor.baseUrl
+  if (values.baseUrl) db.update(vendors).set({ baseUrl: values.baseUrl }).where(eq(vendors.id, vendorId)).run();
   res.json({ ok: true });
 });
 
@@ -195,6 +207,57 @@ router.put("/api/settings/task-slot", (req, res) => {
   } else {
     db.insert(taskSlots).values({ slotKey, modelId, params: null }).run();
   }
+  res.json({ ok: true });
+});
+
+/** DELETE /api/jobs/:id — 删除历史任务（同步删该 job 的 media） */
+router.delete("/api/jobs/:id", async (req, res) => {
+  const db = getDb();
+  const job = db.select().from(jobs).where(eq(jobs.id, req.params.id)).all()[0];
+  if (!job) return res.status(404).json({ error: "not found" });
+  // 删该 job 的 media 文件 + 记录
+  const jobMedia = db.select().from(media).where(eq(media.jobId, req.params.id)).all();
+  for (const m of jobMedia) { await oss.deleteFile(m.filePath).catch(() => {}); db.delete(media).where(eq(media.id, m.id)).run(); }
+  db.delete(jobs).where(eq(jobs.id, req.params.id)).run();
+  res.json({ ok: true });
+});
+
+/** PUT /api/settings/vendor/:id — 更新供应商（baseUrl + name） */
+router.put("/api/settings/vendor/:id", (req, res) => {
+  const db = getDb();
+  const { baseUrl } = req.body || {};
+  const v = db.select().from(vendors).where(eq(vendors.id, req.params.id)).all()[0];
+  if (!v) return res.status(404).json({ error: "供应商不存在" });
+  if (baseUrl !== undefined) {
+    db.update(vendors).set({ baseUrl }).where(eq(vendors.id, req.params.id)).run();
+  }
+  res.json({ ok: true });
+});
+
+/** POST /api/settings/models — 添加自定义模型到供应商 */
+router.post("/api/settings/models", (req, res) => {
+  const db = getDb();
+  const { vendorId, modelName, displayName, type } = req.body || {};
+  if (!vendorId || !modelName) return res.status(400).json({ error: "需提供 vendorId 和 modelName" });
+  const modelId = `${vendorId}:${modelName}`;
+  const existing = db.select().from(models).where(eq(models.id, modelId)).all()[0];
+  if (existing) return res.status(409).json({ error: "模型已存在" });
+  db.insert(models).values({
+    id: modelId, vendorId, modelName, displayName: displayName || modelName,
+    type: type || "image", modes: JSON.stringify(["text", "singleImage"]), pricing: null, enabled: 1,
+  }).run();
+  res.json({ id: modelId });
+});
+
+/** DELETE /api/settings/models/:id — 删除自定义模型 */
+router.delete("/api/settings/models/:id", (req, res) => {
+  const db = getDb();
+  const m = db.select().from(models).where(eq(models.id, req.params.id)).all()[0];
+  if (!m) return res.status(404).json({ error: "模型不存在" });
+  db.delete(models).where(eq(models.id, req.params.id)).run();
+  // 清除引用了该模型的 task_slot 绑定
+  const slots = db.select().from(taskSlots).all().filter((s) => s.modelId === req.params.id);
+  for (const s of slots) db.update(taskSlots).set({ modelId: null }).where(eq(taskSlots.slotKey, s.slotKey)).run();
   res.json({ ok: true });
 });
 

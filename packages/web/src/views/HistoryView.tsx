@@ -1,5 +1,5 @@
-/** web/src/views/HistoryView.tsx — 历史记录列表，点击查看对话详情 */
-import { For, Show, onMount } from "solid-js";
+/** web/src/views/HistoryView.tsx — 历史记录列表，点击查看对话 + 删除 */
+import { createSignal, For, Show, onMount } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { state, loadJobs, loadJobConversation, type JobSummary } from "../context/store";
 
@@ -13,11 +13,18 @@ function timeAgo(ts: number): string {
 
 export default function HistoryView() {
   const navigate = useNavigate();
+  const [confirmDel, setConfirmDel] = createSignal<string | null>(null);
   onMount(loadJobs);
 
   const openJob = async (jobId: string) => {
     await loadJobConversation(jobId);
     navigate("/");
+  };
+
+  const delJob = async (jobId: string) => {
+    await fetch(`/api/jobs/${jobId}`, { method: "DELETE" });
+    setConfirmDel(null);
+    await loadJobs();
   };
 
   return (
@@ -33,6 +40,12 @@ export default function HistoryView() {
             <div class="hli-meta">{job.productName || "无产品图"} · {job.type} · {timeAgo(job.createdAt)}</div>
           </div>
           <span class={`hli-status ${job.status}`}>{job.status}</span>
+          <Show when={confirmDel() === job.id} fallback={
+            <button class="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); setConfirmDel(job.id); }}>删除</button>
+          }>
+            <button class="btn btn-sm" style={{ background: "var(--danger)", color: "#fff" }} onClick={(e) => { e.stopPropagation(); delJob(job.id); }}>确认</button>
+            <button class="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); setConfirmDel(null); }}>取消</button>
+          </Show>
         </div>
       )}</For>
     </div>
