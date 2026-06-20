@@ -198,6 +198,19 @@ router.put("/api/settings/task-slot", (req, res) => {
   res.json({ ok: true });
 });
 
+/** GET /api/jobs — 任务列表（历史记录，按 createdAt 倒序，join 产品名） */
+router.get("/api/jobs", (_req, res) => {
+  const db = getDb();
+  const allJobs = db.select().from(jobs).all().sort((a, b) => b.createdAt - a.createdAt);
+  const allProducts = db.select().from(products).all();
+  const productMap = new Map(allProducts.map((p) => [p.id, p.name]));
+  res.json(allJobs.map((j) => ({
+    id: j.id, productId: j.productId, productName: j.productId ? productMap.get(j.productId) || "未知" : null,
+    type: j.type, instruction: j.instruction, status: j.status, progress: j.progress,
+    result: j.result, error: j.error, createdAt: j.createdAt, finishedAt: j.finishedAt,
+  })));
+});
+
 /** GET /api/jobs/:id — 查任务状态 */
 router.get("/api/jobs/:id", (req, res) => {
   const db = getDb();
