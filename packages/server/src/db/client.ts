@@ -95,6 +95,11 @@ export function initSchema(): void {
       platform TEXT PRIMARY KEY, hero_size TEXT, detail_size TEXT,
       hero_count INTEGER, rules TEXT, text_render_pref TEXT
     );
+    CREATE TABLE IF NOT EXISTS materials (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, prompt_text TEXT,
+      file_path TEXT NOT NULL, source_media_id TEXT,
+      kind TEXT NOT NULL DEFAULT 'image', created_at INTEGER NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS idx_media_product ON media(product_id);
     CREATE INDEX IF NOT EXISTS idx_media_asset ON media(asset_id);
     CREATE INDEX IF NOT EXISTS idx_jobs_product ON jobs(product_id);
@@ -105,6 +110,9 @@ export function initSchema(): void {
   // media 表加列（SQLite 不支持 ADD COLUMN IF NOT EXISTS，try-catch 容错）
   migrateAddColumn("media", "slot_code", "TEXT");
   migrateAddColumn("media", "sort_order", "INTEGER");
+  migrateAddColumn("media", "job_id", "TEXT");
+  // job_id 列加完后再建索引
+  try { getRaw().exec("CREATE INDEX IF NOT EXISTS idx_media_job ON media(job_id)"); } catch {}
 }
 
 /** 安全加列：已存在则忽略（SQLite ADD COLUMN 无 IF NOT EXISTS） */

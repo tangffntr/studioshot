@@ -5,6 +5,7 @@ import { Router, Route } from "@solidjs/router";
 import { AppLayout } from "./App";
 import ChatView from "./views/ChatView";
 import HistoryView from "./views/HistoryView";
+import MaterialsView from "./views/MaterialsView";
 import AssetsView from "./views/AssetsView";
 import SettingsView from "./views/SettingsView";
 
@@ -13,6 +14,7 @@ if (root) render(() => (
   <Router root={AppLayout}>
     <Route path="/" component={ChatView} />
     <Route path="/history" component={HistoryView} />
+    <Route path="/materials" component={MaterialsView} />
     <Route path="/assets" component={AssetsView} />
     <Route path="/settings" component={SettingsView} />
   </Router>

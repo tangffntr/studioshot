@@ -21,6 +21,7 @@ export const media = sqliteTable("media", {
   id: text("id").primaryKey(),
   assetId: text("asset_id"),
   productId: text("product_id"),
+  jobId: text("job_id"), // ⭐ 关联产出 job（右侧栏按 job 过滤）
   type: text("type").notNull(), // image | video
   filePath: text("file_path").notNull(),
   thumbPath: text("thumb_path"),
@@ -145,6 +146,17 @@ export const platformSpecs = sqliteTable("platform_specs", {
   textRenderPref: text("text_render_pref"), // 中文|英文
 });
 
+/** 素材库（可复用：用户从资产转存，或手动添加） */
+export const materials = sqliteTable("materials", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  promptText: text("prompt_text"),
+  filePath: text("file_path").notNull(),
+  sourceMediaId: text("source_media_id"), // 从哪个 media 转存
+  kind: text("kind").notNull().default("image"), // image | scene-ref
+  createdAt: integer("created_at").notNull(),
+});
+
 export type DbProduct = typeof products.$inferSelect;
 export type DbMedia = typeof media.$inferSelect;
 export type DbJob = typeof jobs.$inferSelect;
@@ -156,3 +168,4 @@ export type DbTaskSlot = typeof taskSlots.$inferSelect;
 export type DbTemplate = typeof templates.$inferSelect;
 export type DbTemplateSlot = typeof templateSlots.$inferSelect;
 export type DbPlatformSpec = typeof platformSpecs.$inferSelect;
+export type DbMaterial = typeof materials.$inferSelect;

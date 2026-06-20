@@ -54,7 +54,7 @@ export async function runBatchSkuJob(jobId: string, productId: string | null, ma
         const filePath = `/${productId || "batch"}/sku-swap/sku${i + 1}_${fileId}.png`;
         const facade = Model.image("main-image").generate({ prompt: SWAP_PROMPT, referenceImages: [sceneB64, prodB64], size: "1024x1024" });
         await facade.run();
-        const result = await facade.save(filePath, productId, SWAP_PROMPT);
+        const result = await facade.save(filePath, productId, SWAP_PROMPT, jobId);
         db.update(media).set({ slotCode: `SKU-${i + 1}`, sortOrder: i + 1 }).where(eq(media.id, result.mediaId)).run();
 
         mediaIds.push(result.mediaId);

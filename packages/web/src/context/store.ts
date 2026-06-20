@@ -13,7 +13,16 @@ export interface ChatMessage {
   mediaId?: string;
   mediaUrl?: string;
   slotCode?: string;
+  promptText?: string; // ⭐ 该图生成时的 prompt（产出栏/消息流展示+编辑）
   ts: number;
+}
+
+export interface OutputMedia {
+  id: string;
+  url: string;
+  promptText: string | null;
+  slotCode: string | null;
+  sortOrder: number | null;
 }
 
 export interface JobSummary {
@@ -33,6 +42,7 @@ interface AppState {
   jobStatus: string | null;
   jobProgress: number;
   messages: ChatMessage[];
+  outputMedia: OutputMedia[]; // ⭐ 当前 job 产出（右侧栏）
   jobs: JobSummary[];
   connected: boolean;
 }
@@ -42,6 +52,7 @@ const [state, setState] = createStore<AppState>({
   jobStatus: null,
   jobProgress: 0,
   messages: [],
+  outputMedia: [],
   jobs: [],
   connected: false,
 });
@@ -69,6 +80,7 @@ export function newConversation() {
   setState("jobStatus", null);
   setState("jobProgress", 0);
   setState("messages", []);
+  setState("outputMedia", []);
 }
 
 function push(msg: ChatMessage) { setState("messages", (m) => [...m, msg]); }
@@ -95,9 +107,12 @@ function handleEvent(evt: SseEvent) {
       break;
     case "media.completed":
       if (evt.mediaId) {
-        fetch(`/api/media`).then((r) => r.json()).then((list: any[]) => {
-          const m = list.find((x) => x.id === evt.mediaId);
-          if (m) push({ id: crypto.randomUUID(), role: "media", mediaId: m.id, mediaUrl: m.url, slotCode: m.slotCode, ts: Date.now() });
+        // 查单图详情（含 promptText），增量填充 outputMedia + 消息流
+        fetch(`/api/media/${evt.mediaId}`).then((r) => r.json()).then((m: any) => {
+          if (m) {
+            setState("outputMedia", (om) => [...om, { id: m.id, url: m.url, promptText: m.promptText, slotCode: m.slotCode, sortOrder: m.sortOrder }]);
+            push({ id: crypto.randomUUID(), role: "media", mediaId: m.id, mediaUrl: m.url, slotCode: m.slotCode, promptText: m.promptText, ts: Date.now() });
+          }
         });
       }
       break;

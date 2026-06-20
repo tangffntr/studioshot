@@ -54,7 +54,7 @@ export async function runVideoJob(jobId: string, productId: string | null, sourc
 
     const mediaId = crypto.randomUUID();
     db.insert(media).values({
-      id: mediaId, assetId: null, productId, type: "video", filePath, thumbPath: null,
+      id: mediaId, assetId: null, productId, jobId, type: "video", filePath, thumbPath: null,
       modelId: null, promptText: prompt, params: JSON.stringify({ sourceMedia: sourceMediaId, duration }),
       genState: "done", errorReason: null, cost: result.cost, width: null, height: null, duration: duration || 5,
       slotCode: "VIDEO", sortOrder: 1, createdAt: Date.now(),

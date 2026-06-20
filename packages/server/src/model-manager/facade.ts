@@ -91,7 +91,7 @@ class ImageFacade {
     return this;
   }
 
-  async save(filePath: string, productId: string | null = null, promptText: string | null = null): Promise<ImageGenResult> {
+  async save(filePath: string, productId: string | null = null, promptText: string | null = null, jobId?: string): Promise<ImageGenResult> {
     if (!this.result) throw new Error("未先调用 run()");
     const relPath = await oss.writeFile(filePath, this.result.base64);
     const mediaId = crypto.randomUUID();
@@ -100,6 +100,7 @@ class ImageFacade {
       id: mediaId,
       assetId: null,
       productId,
+      jobId: jobId || null,
       type: "image",
       filePath: relPath,
       thumbPath: null,

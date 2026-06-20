@@ -15,6 +15,10 @@ export default function AssetsView() {
   };
   const loadMedia = async (pid: string) => { setMedia(await fetch(`/api/media?productId=${pid}`).then((r) => r.json())); };
   const del = async (mid: string) => { await fetch(`/api/media/${mid}`, { method: "DELETE" }); setConfirmDel(null); await loadMedia(selProduct()); };
+  const saveAsMaterial = async (m: any) => {
+    await fetch("/api/materials", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sourceMediaId: m.id, name: m.slotCode ? `${m.slotCode} 素材` : "资产素材", promptText: m.promptText }) });
+    alert("已存为素材");
+  };
   onMount(() => { loadProducts(); setInterval(loadProducts, 5000); });
 
   return (
@@ -35,8 +39,12 @@ export default function AssetsView() {
                 <Show when={m.slotCode}><span class="slot-badge">{m.slotCode}</span></Show>
                 <Show when={m.sortOrder}><span class="hint">#{m.sortOrder}</span></Show>
               </div>
-              <div class="media-actions" style={{ padding: "0 10px 8px" }}>
+              <Show when={m.promptText}>
+                <div class="hint" style={{ padding: "0 10px", "max-height": "36px", overflow: "hidden", "font-size": "10px" }}>{m.promptText?.slice(0, 80)}</div>
+              </Show>
+              <div class="media-actions" style={{ padding: "6px 10px 8px" }}>
                 <a href={m.url} download="">下载</a>
+                <a onClick={(e) => { e.preventDefault(); saveAsMaterial(m); }}>存为素材</a>
                 <Show when={confirmDel() === m.id} fallback={
                   <a class="danger" onClick={(e) => { e.preventDefault(); setConfirmDel(m.id); }}>删除</a>
                 }>

@@ -116,7 +116,7 @@ export async function runPipelineJob(jobId: string, templateId: string, productI
           size,
         });
         await facade.run();
-        const result = await facade.save(filePath, productId, prompt);
+        const result = await facade.save(filePath, productId, prompt, jobId);
 
         // 更新 media 记录的 slotCode + sortOrder
         db.update(media).set({ slotCode: slot.slotCode, sortOrder: i + 1 }).where(eq(media.id, result.mediaId)).run();

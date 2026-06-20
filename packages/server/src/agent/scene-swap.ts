@@ -56,7 +56,7 @@ export async function runSceneSwapJob(jobId: string, productId: string | null, r
       size: "1024x1024",
     });
     await facade.run();
-    const result = await facade.save(filePath, productId, prompt);
+    const result = await facade.save(filePath, productId, prompt, jobId);
 
     // 标记为场景替换产出
     db.update(media).set({ slotCode: "SCENE-SWAP", sortOrder: 1 }).where(eq(media.id, result.mediaId)).run();

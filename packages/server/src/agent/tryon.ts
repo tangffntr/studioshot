@@ -61,7 +61,7 @@ export async function runTryonJob(jobId: string, productId: string | null, perso
     await oss.writeFile(filePath, result.base64);
     const mediaId = crypto.randomUUID();
     db.insert(media).values({
-      id: mediaId, assetId: null, productId, type: "image", filePath, thumbPath: null,
+      id: mediaId, assetId: null, productId, jobId, type: "image", filePath, thumbPath: null,
       modelId: null, promptText: "OutfitAnyone 试穿", params: JSON.stringify({ person: personMediaId, top: topGarmentMediaId, bottom: bottomGarmentMediaId }),
       genState: "done", errorReason: null, cost: result.cost, width: null, height: null, duration: null,
       slotCode: "TRYON", sortOrder: 1, createdAt: Date.now(),

@@ -5,7 +5,7 @@
 import { Router } from "express";
 import * as crypto from "node:crypto";
 import { getDb, initSchema } from "../db/client";
-import { products, media, jobs, templates, templateSlots, vendors, vendorCredentials, models, taskSlots } from "../db/schema";
+import { products, media, jobs, templates, templateSlots, vendors, vendorCredentials, models, taskSlots, materials } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { oss } from "../storage/oss";
 import { eventBus } from "../agent/event-bus";
@@ -219,14 +219,15 @@ router.get("/api/jobs/:id", (req, res) => {
   res.json(job);
 });
 
-/** GET /api/media?productId= — 媒体列表 */
+/** GET /api/media?productId=&jobId= — 媒体列表 */
 router.get("/api/media", (req, res) => {
   const db = getDb();
   const pid = req.query.productId as string | undefined;
-  const list = pid
-    ? db.select().from(media).where(eq(media.productId, pid)).all()
-    : db.select().from(media).all();
-  // 按 sortOrder/slotCode 排序（套图内有序展示）
+  const jid = req.query.jobId as string | undefined;
+  let list;
+  if (jid) list = db.select().from(media).where(eq(media.jobId, jid)).all();
+  else if (pid) list = db.select().from(media).where(eq(media.productId, pid)).all();
+  else list = db.select().from(media).all();
   list.sort((a, b) => {
     if (a.sortOrder != null && b.sortOrder != null) return a.sortOrder - b.sortOrder;
     return a.createdAt - b.createdAt;
@@ -250,6 +251,60 @@ router.delete("/api/media/:id", async (req, res) => {
   await oss.deleteFile(m.filePath);
   if (m.thumbPath) await oss.deleteFile(m.thumbPath).catch(() => {});
   db.delete(media).where(eq(media.id, req.params.id)).run();
+  res.json({ ok: true });
+});
+
+/** PATCH /api/media/:id — 编辑 promptText */
+router.patch("/api/media/:id", (req, res) => {
+  const db = getDb();
+  const { promptText } = req.body || {};
+  if (promptText === undefined) return res.status(400).json({ error: "需提供 promptText" });
+  const m = db.select().from(media).where(eq(media.id, req.params.id)).all()[0];
+  if (!m) return res.status(404).json({ error: "not found" });
+  db.update(media).set({ promptText }).where(eq(media.id, req.params.id)).run();
+  res.json({ ok: true });
+});
+
+/** GET /api/materials — 素材库列表 */
+router.get("/api/materials", (_req, res) => {
+  const db = getDb();
+  const list = db.select().from(materials).all().sort((a, b) => b.createdAt - a.createdAt);
+  res.json(list.map((m) => ({ ...m, url: oss.getFileUrl(m.filePath) })));
+});
+
+/** POST /api/materials — 从 media 转存为素材（或手动创建） */
+router.post("/api/materials", async (req, res) => {
+  const db = getDb();
+  const { sourceMediaId, name, promptText, kind } = req.body || {};
+  if (!name) return res.status(400).json({ error: "需提供 name" });
+  const mid = crypto.randomUUID();
+  let filePath = "";
+  let srcMediaId = sourceMediaId || null;
+  if (sourceMediaId) {
+    // 从 media 复制文件
+    const src = db.select().from(media).where(eq(media.id, sourceMediaId)).all()[0];
+    if (!src) return res.status(404).json({ error: "源 media 不存在" });
+    const srcBuf = await oss.getFile(src.filePath);
+    filePath = `/materials/${mid}.${(src.filePath.split(".").pop() || "png")}`;
+    await oss.writeFile(filePath, srcBuf.toString("base64"));
+    if (promptText === undefined) req.body.promptText = src.promptText;
+  } else {
+    return res.status(400).json({ error: "目前需通过 sourceMediaId 从资产转存" });
+  }
+  db.insert(materials).values({
+    id: mid, name, promptText: promptText || null, filePath,
+    sourceMediaId: srcMediaId, kind: kind || "image", createdAt: Date.now(),
+  }).run();
+  res.json({ id: mid });
+});
+
+/** DELETE /api/materials/:id — 删除素材 */
+router.delete("/api/materials/:id", async (req, res) => {
+  const db = getDb();
+  const m = db.select().from(materials).where(eq(materials.id, req.params.id)).all()[0];
+  if (!m) return res.status(404).json({ error: "not found" });
+  await oss.deleteFile(m.filePath).catch(() => {});
+  db.delete(materials).where(eq(materials.id, req.params.id)).run();
   res.json({ ok: true });
 });
 

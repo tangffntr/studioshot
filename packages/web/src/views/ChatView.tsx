@@ -38,18 +38,22 @@ export default function ChatView() {
 
   const send = async () => {
     if (!text().trim() && !productImg()) return;
-    if (!productImg()) { setError("请先上传产品图"); return; }
     setError("");
     setBusy(true);
 
-    // 用户消息入流
     setState("messages", (m) => [...m, { id: crypto.randomUUID(), role: "user", text: text() || `[${mode()}] 出图请求`, ts: Date.now() }]);
+    // 新 job 开始时清空产出栏
+    setState("outputMedia", []);
 
     try {
-      const b64 = await fileToBase64(productImg()!);
-      const up = await fetch("/api/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: imgName(), imageBase64: b64, imageMime: "image/png" }) }).then((r) => r.json());
-
-      const jobBody: any = { productId: up.productId, instruction: text() || "生成图片", attachments: [up.mediaId] };
+      const jobBody: any = { instruction: text() || "生成图片" };
+      // 有产品图才上传（可选附件）
+      if (productImg()) {
+        const b64 = await fileToBase64(productImg()!);
+        const up = await fetch("/api/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: imgName(), imageBase64: b64, imageMime: "image/png" }) }).then((r) => r.json());
+        jobBody.productId = up.productId;
+        jobBody.attachments = [up.mediaId];
+      }
       if (mode() === "template") jobBody.templateId = "builtin-amazon-pdp";
       else jobBody.mode = mode() === "agent" ? "agent" : mode();
 
