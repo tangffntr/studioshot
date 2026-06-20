@@ -1,6 +1,6 @@
 /**
- * web/src/App.tsx — 对话工作台（首里程碑 UI）
- * 上传产品图 → 提交出图任务 → 实时显示 Agent 轨迹 + 生成图
+ * web/src/App.tsx — 电商出图工作台（编辑部深色风格）
+ * 保留全部功能：上传/模板/出图/画廊/设置/轨迹
  */
 import { createSignal, onMount, Show, For } from "solid-js";
 import { state, setState, connectSSE } from "./context/store";
@@ -34,7 +34,6 @@ function fileToBase64(file: File): Promise<string> {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      // 去 data: 前缀
       const comma = result.indexOf(",");
       resolve(comma > 0 ? result.slice(comma + 1) : result);
     };
@@ -104,110 +103,114 @@ export default function App() {
   };
 
   return (
-    <div style={{ "max-width": "1100px", margin: "0 auto", padding: "24px", "font-family": "system-ui, sans-serif" }}>
-      <h1 style={{ "margin-bottom": "4px" }}>🛒 电商出图 Agent</h1>
-      <div style={{ color: "#888", "margin-bottom": "24px" }}>
-        <Show when={state.connected} fallback={<span style={{ color: "#dc2626" }}>● 未连接</span>}>
-          <span style={{ color: "#16a34a" }}>● 已连接</span>
-        </Show>
-        <Show when={state.jobStatus}>
-          {"  ·  状态："}<b>{state.jobStatus}</b>
-          <Show when={state.jobProgress > 0 && state.jobStatus === "running"}>
-            {"  "}{state.jobProgress.toFixed(0)}%
-          </Show>
-        </Show>
-      </div>
-
-      <div style={{ display: "flex", gap: "24px", "flex-wrap": "wrap" }}>
-        {/* 左：上传 + 指令 */}
-        <div style={{ flex: "1 1 320px" }}>
-          <h3>1. 上传产品图</h3>
-          <input type="text" placeholder="产品名称" value={productName()} onInput={(e) => setProductName(e.currentTarget.value)} style={inputStyle} />
-          <input type="file" accept="image/*" onChange={onFile} style={{ "margin-top": "8px" }} />
-          <Show when={previewUrl()}>
-            <img src={previewUrl()} style={{ "max-width": "100%", "max-height": "200px", "margin-top": "8px", border: "1px solid #ddd" }} />
-          </Show>
-          <button onClick={upload} disabled={busy() || !productImg()} style={btnStyle}>上传产品</button>
-          <Show when={productId()}>
-            <div style={{ color: "#16a34a", "font-size": "13px", "margin-top": "4px" }}>✓ 已上传 (media: {mediaId()?.slice(0, 8)}…)</div>
-          </Show>
-
-          <h3 style={{ "margin-top": "24px" }}>2. 选择模板（可选）</h3>
-          <select
-            value={selectedTpl()}
-            onChange={(e) => setSelectedTpl(e.currentTarget.value)}
-            style={inputStyle}
-          >
-            <option value="">不使用模板（单图 Agent 模式）</option>
-            <For each={templates()}>
-              {(t) => <option value={t.id}>{t.name}（{t.slotCount} 图位）</option>}
-            </For>
-          </select>
-          <Show when={selectedTpl()}>
-            <div style={{ "font-size": "12px", color: "#7c3aed", "margin-top": "4px" }}>
-              ⚡ Pipeline 模式：将按模板确定性生成 {templates().find((t) => t.id === selectedTpl())?.slotCount} 张图（约 8-10 分钟）
-            </div>
-          </Show>
-
-          <h3 style={{ "margin-top": "24px" }}>3. 提交出图任务</h3>
-          <Show when={!selectedTpl()}>
-            <textarea
-              value={instruction()}
-              onInput={(e) => setInstruction(e.currentTarget.value)}
-              rows={3}
-              style={{ ...inputStyle, "font-family": "inherit", "vertical-align": "top" }}
-            />
-          </Show>
-          <Show when={selectedTpl()}>
-            <div style={{ ...inputStyle, color: "#888", "min-height": "40px" }}>模板将自动渲染所有图位的 prompt，无需手动输入指令</div>
-          </Show>
-          <button onClick={submitJob} disabled={busy() || !productId()} style={btnStyle}>▶ 开始出图</button>
-          <Show when={error()}>
-            <div style={{ color: "#dc2626", "font-size": "13px", "margin-top": "4px" }}>{error()}</div>
-          </Show>
+    <div class="app-shell">
+      {/* 顶部 header */}
+      <header class="app-header">
+        <div class="app-logo font-display">
+          Studio<span class="dot">.</span>Shot
         </div>
+        <div class="status-pill">
+          <span class={`status-dot ${state.connected ? "" : "off"}`}></span>
+          <Show when={state.connected} fallback="未连接">{state.jobStatus ? `${state.jobStatus} ${state.jobProgress > 0 ? state.jobProgress.toFixed(0) + "%" : ""}` : "就绪"}</Show>
+        </div>
+      </header>
 
-        {/* 右：Agent 轨迹 */}
-        <div style={{ flex: "1 1 420px" }}>
-          <h3>Agent 轨迹</h3>
-          <div style={{ border: "1px solid #ddd", "border-radius": "8px", padding: "12px", "min-height": "300px", "max-height": "500px", "overflow-y": "auto", background: "#fafafa" }}>
-            <Show when={state.timeline.length === 0} fallback={
-              <For each={state.timeline}>
-                {(item) => <TimelineRow item={item} />}
+      {/* 工作区 */}
+      <div class="workspace">
+        {/* 左：控制面板 */}
+        <aside class="control-panel">
+          <div class="section-block">
+            <div class="section-label"><span class="num">01</span> 产品上传</div>
+            <input class="field" type="text" placeholder="产品名称" value={productName()} onInput={(e) => setProductName(e.currentTarget.value)} />
+            <div style={{ "margin-top": "10px" }}>
+              <label class={`upload-zone ${previewUrl() ? "has-img" : ""}`} style={{ display: "block" }}>
+                <Show when={previewUrl()} fallback={
+                  <div>
+                    <div style={{ "font-size": "24px", "margin-bottom": "6px" }}>+</div>
+                    <div style={{ "font-size": "12px", color: "var(--fg-dim)" }}>点击或拖拽上传产品图</div>
+                  </div>
+                }>
+                  <img class="upload-preview" src={previewUrl()} alt="预览" />
+                </Show>
+                <input type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} />
+              </label>
+            </div>
+            <button class="btn btn-ghost btn-block btn-sm" onClick={upload} disabled={busy() || !productImg()} style={{ "margin-top": "10px" }}>上传</button>
+            <Show when={productId()}>
+              <div class="hint hint-accent" style={{ "margin-top": "6px" }}>✓ 已就绪</div>
+            </Show>
+          </div>
+
+          <div class="section-block">
+            <div class="section-label"><span class="num">02</span> 模板</div>
+            <select class="field" value={selectedTpl()} onChange={(e) => setSelectedTpl(e.currentTarget.value)}>
+              <option value="">单图 Agent 模式</option>
+              <For each={templates()}>
+                {(t) => <option value={t.id}>{t.name} · {t.slotCount} 图</option>}
               </For>
+            </select>
+            <Show when={selectedTpl()}>
+              <div class="hint hint-accent">⚡ Pipeline · {templates().find((t) => t.id === selectedTpl())?.slotCount} 张图</div>
+            </Show>
+          </div>
+
+          <div class="section-block">
+            <div class="section-label"><span class="num">03</span> 指令</div>
+            <Show when={!selectedTpl()}>
+              <textarea class="field" value={instruction()} onInput={(e) => setInstruction(e.currentTarget.value)} rows={3} />
+            </Show>
+            <Show when={selectedTpl()}>
+              <div class="hint">模板自动渲染全部图位 prompt</div>
+            </Show>
+            <button class="btn btn-primary btn-block" onClick={submitJob} disabled={busy() || !productId()} style={{ "margin-top": "12px" }}>
+              开始出图 →
+            </button>
+            <Show when={error()}><div class="error-msg">{error()}</div></Show>
+            <Show when={state.jobStatus === "running"}>
+              <div class="progress-track"><div class="progress-fill" style={{ width: `${state.jobProgress}%` }}></div></div>
+            </Show>
+          </div>
+        </aside>
+
+        {/* 右：产出区 */}
+        <main class="output-panel">
+          <div class="divider-label">Agent Timeline</div>
+          <div class="timeline">
+            <Show when={state.timeline.length === 0} fallback={
+              <For each={state.timeline}>{(item) => <TimelineRow item={item} />}</For>
             }>
-              <div style={{ color: "#999" }}>提交任务后，这里会实时显示 Agent 的思考和工具调用。</div>
+              <div class="timeline-empty">
+                <div style={{ "font-size": "28px", opacity: 0.3 }}>◇</div>
+                <div>提交任务后，Agent 的思考与工具调用将实时呈现</div>
+              </div>
             </Show>
           </div>
 
           <Show when={state.mediaList.length > 0}>
-            <h3 style={{ "margin-top": "16px" }}>生成的图</h3>
-            <div style={{ display: "flex", gap: "12px", "flex-wrap": "wrap" }}>
+            <div class="divider-label">Generated</div>
+            <div class="media-grid">
               <For each={state.mediaList}>
                 {(m) => (
-                  <div>
-                    <img src={m.url} style={{ width: "180px", border: "1px solid #ddd", "border-radius": "6px" }} />
-                    <Show when={m.promptText}>
-                      <div style={{ "font-size": "11px", color: "#888", "max-width": "180px", "margin-top": "4px" }}>{m.promptText?.slice(0, 60)}…</div>
-                    </Show>
+                  <div class="media-card">
+                    <img src={m.url} alt={m.promptText || ""} />
+                    <div class="media-meta">
+                      <Show when={m.promptText}><span class="hint" style={{ "max-width": "120px", overflow: "hidden", "text-overflow": "ellipsis", "white-space": "nowrap" }}>{m.promptText}</span></Show>
+                    </div>
                   </div>
                 )}
               </For>
             </div>
           </Show>
-        </div>
+
+          <GallerySection />
+          <SettingsSection />
+        </main>
       </div>
-
-      {/* 素材画廊区 */}
-      <GallerySection />
-
-      {/* 模型设置区 */}
-      <SettingsSection />
     </div>
   );
 }
 
-/** 素材画廊：按产品查看历史图，含 slotCode 标签、下载、删除 */
+/** 素材画廊 */
 function GallerySection() {
   const [galleryProducts, setGalleryProducts] = createSignal<Array<{ id: string; name: string }>>([]);
   const [selProduct, setSelProduct] = createSignal<string>("");
@@ -218,62 +221,38 @@ function GallerySection() {
     const r = await fetch("/api/products").then((r) => r.json());
     setGalleryProducts(r);
     if (r.length && !selProduct()) { setSelProduct(r[0].id); await loadMedia(r[0].id); }
-    else if (selProduct()) { await loadMedia(selProduct()); } // 刷新当前产品媒体
+    else if (selProduct()) { await loadMedia(selProduct()); }
   };
-
-  const loadMedia = async (pid: string) => {
-    const r = await fetch(`/api/media?productId=${pid}`).then((r) => r.json());
-    setGalleryMedia(r);
-  };
-
-  const deleteMedia = async (mid: string) => {
-    await fetch(`/api/media/${mid}`, { method: "DELETE" });
-    setConfirmDel(null);
-    await loadMedia(selProduct());
-  };
-
-  onMount(() => {
-    refreshProducts();
-    // 自动刷新（5s，便于看到生成中的新图 + 上传后的新产品）
-    setInterval(refreshProducts, 5000);
-  });
+  const loadMedia = async (pid: string) => { const r = await fetch(`/api/media?productId=${pid}`).then((r) => r.json()); setGalleryMedia(r); };
+  const deleteMedia = async (mid: string) => { await fetch(`/api/media/${mid}`, { method: "DELETE" }); setConfirmDel(null); await loadMedia(selProduct()); };
+  onMount(() => { refreshProducts(); setInterval(refreshProducts, 5000); });
 
   return (
-    <div style={{ "margin-top": "32px", "border-top": "1px solid #eee", "padding-top": "16px" }}>
-      <h2>📁 素材画廊</h2>
-      <div style={{ display: "flex", gap: "8px", "align-items": "center", "margin-bottom": "12px" }}>
-        <select
-          value={selProduct()}
-          onChange={async (e) => { setSelProduct(e.currentTarget.value); await loadMedia(e.currentTarget.value); }}
-          style={{ ...inputStyle, width: "auto" }}
-        >
-          <For each={galleryProducts()}>
-            {(p) => <option value={p.id}>{p.name}</option>}
-          </For>
+    <div class="card-section">
+      <h2 class="font-display">素材库</h2>
+      <div style={{ display: "flex", gap: "10px", "align-items": "center", "margin-bottom": "16px" }}>
+        <select class="field" style={{ width: "auto" }} value={selProduct()} onChange={async (e) => { setSelProduct(e.currentTarget.value); await loadMedia(e.currentTarget.value); }}>
+          <For each={galleryProducts()}>{(p) => <option value={p.id}>{p.name}</option>}</For>
         </select>
-        <button onClick={() => refreshProducts()} style={{ ...btnStyle, "margin-top": "0", padding: "6px 12px" }}>刷新</button>
-        <span style={{ "font-size": "12px", color: "#888" }}>{galleryMedia().length} 张图</span>
+        <span class="hint">{galleryMedia().length} 项</span>
       </div>
-
       <Show when={galleryMedia().length === 0} fallback={
-        <div style={{ display: "grid", "grid-template-columns": "repeat(auto-fill, minmax(160px, 1fr))", gap: "12px" }}>
+        <div class="media-grid">
           <For each={galleryMedia()}>
             {(m) => (
-              <div style={{ border: "1px solid #ddd", "border-radius": "6px", padding: "6px", background: "#fff" }}>
-                <img src={m.url} style={{ width: "100%", height: "140px", "object-fit": "cover", "border-radius": "4px" }} />
-                <Show when={m.slotCode}>
-                  <span style={{ "font-size": "10px", background: "#2563eb", color: "#fff", padding: "1px 5px", "border-radius": "3px", "margin-top": "4px", display: "inline-block" }}>{m.slotCode}</span>
-                </Show>
-                <Show when={m.sortOrder}>
-                  <span style={{ "font-size": "10px", color: "#888", "margin-left": "4px" }}>#{m.sortOrder}</span>
-                </Show>
-                <div style={{ display: "flex", gap: "4px", "margin-top": "4px" }}>
-                  <a href={m.url} download="" style={{ "font-size": "11px", color: "#2563eb" }}>下载</a>
+              <div class="media-card">
+                <img src={m.url} alt="" />
+                <div class="media-meta">
+                  <Show when={m.slotCode}><span class="slot-badge">{m.slotCode}</span></Show>
+                  <Show when={m.sortOrder}><span class="hint">#{m.sortOrder}</span></Show>
+                </div>
+                <div class="media-actions" style={{ padding: "0 10px 8px" }}>
+                  <a href={m.url} download="">下载</a>
                   <Show when={confirmDel() === m.id} fallback={
-                    <a href="#" onClick={(e) => { e.preventDefault(); setConfirmDel(m.id); }} style={{ "font-size": "11px", color: "#dc2626", "margin-left": "8px" }}>删除</a>
+                    <a class="danger" onClick={(e) => { e.preventDefault(); setConfirmDel(m.id); }}>删除</a>
                   }>
-                    <a href="#" onClick={(e) => { e.preventDefault(); deleteMedia(m.id); }} style={{ "font-size": "11px", color: "#dc2626", "margin-left": "8px" }}>确认删除</a>
-                    <a href="#" onClick={(e) => { e.preventDefault(); setConfirmDel(null); }} style={{ "font-size": "11px", color: "#888", "margin-left": "4px" }}>取消</a>
+                    <a class="danger" onClick={(e) => { e.preventDefault(); deleteMedia(m.id); }}>确认</a>
+                    <a onClick={(e) => { e.preventDefault(); setConfirmDel(null); }}>取消</a>
                   </Show>
                 </div>
               </div>
@@ -281,114 +260,61 @@ function GallerySection() {
           </For>
         </div>
       }>
-        <div style={{ color: "#999" }}>该产品暂无素材。生成图片后会出现在这里。</div>
+        <div class="hint">该产品暂无素材</div>
       </Show>
     </div>
   );
 }
 
-/** 模型设置：供应商凭证状态 + 任务槽模型绑定 */
+/** 模型设置 */
 function SettingsSection() {
   const [settings, setSettings] = createSignal<any>(null);
   const [editVendor, setEditVendor] = createSignal<string | null>(null);
   const [credInputs, setCredInputs] = createSignal<Record<string, string>>({});
   const [savedMsg, setSavedMsg] = createSignal("");
 
-  const load = async () => {
-    try { setSettings(await fetch("/api/settings").then((r) => r.json())); } catch {}
-  };
+  const load = async () => { try { setSettings(await fetch("/api/settings").then((r) => r.json())); } catch {} };
   onMount(load);
-
-  const startEdit = (v: any) => {
-    setEditVendor(v.id);
-    const inputs: Record<string, string> = {};
-    v.inputs.forEach((i: any) => { inputs[i.key] = v.baseUrl && i.key === "baseUrl" ? v.baseUrl : ""; });
-    setCredInputs(inputs);
-    setSavedMsg("");
-  };
-
-  const saveCreds = async (vendorId: string) => {
-    await fetch("/api/settings/credentials", {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vendorId, values: credInputs() }),
-    });
-    setEditVendor(null);
-    setSavedMsg(`${vendorId} 凭证已保存`);
-    await load();
-  };
-
-  const bindSlot = async (slotKey: string, modelId: string) => {
-    await fetch("/api/settings/task-slot", {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slotKey, modelId }),
-    });
-    setSavedMsg(`${slotKey} 已绑定 ${modelId}`);
-    await load();
-  };
+  const startEdit = (v: any) => { setEditVendor(v.id); const inputs: Record<string, string> = {}; v.inputs.forEach((i: any) => { inputs[i.key] = v.baseUrl && i.key === "baseUrl" ? v.baseUrl : ""; }); setCredInputs(inputs); setSavedMsg(""); };
+  const saveCreds = async (vendorId: string) => { await fetch("/api/settings/credentials", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vendorId, values: credInputs() }) }); setEditVendor(null); setSavedMsg(`${vendorId} 已保存`); await load(); };
+  const bindSlot = async (slotKey: string, modelId: string) => { await fetch("/api/settings/task-slot", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slotKey, modelId }) }); setSavedMsg(`${slotKey} 已绑定`); await load(); };
 
   return (
-    <div style={{ "margin-top": "32px", "border-top": "1px solid #eee", "padding-top": "16px" }}>
-      <h2>⚙️ 模型设置</h2>
-      <Show when={savedMsg()}>
-        <div style={{ color: "#16a34a", "font-size": "13px", "margin-bottom": "8px" }}>✓ {savedMsg()}</div>
-      </Show>
-      <Show when={!settings()}>
-        <div style={{ color: "#999" }}>加载中...</div>
-      </Show>
+    <div class="card-section">
+      <h2 class="font-display">模型配置</h2>
+      <Show when={savedMsg()}><div class="saved-msg">✓ {savedMsg()}</div></Show>
       <Show when={settings()}>
-        <div style={{ display: "flex", gap: "16px", "flex-wrap": "wrap" }}>
+        <div class="vendor-grid">
           <For each={settings().vendors || []}>
             {(v: any) => (
-              <div style={{ border: "1px solid #ddd", "border-radius": "8px", padding: "12px", "min-width": "260px" }}>
-                <div style={{ "font-weight": 600 }}>{v.name}</div>
-                <div style={{ "font-size": "12px", color: "#888", "margin-bottom": "8px" }}>{v.id} · {v.adapter}</div>
-                <div style={{ "font-size": "12px", "margin-bottom": "6px" }}>
-                  凭证：<span style={{ color: v.hasCredentials ? "#16a34a" : "#dc2626" }}>{v.hasCredentials ? "✓ 已配置" : "✗ 未配置"}</span>
-                </div>
+              <div class="vendor-card">
+                <div class="vendor-name">{v.name}</div>
+                <div class="vendor-meta">{v.id} · {v.adapter}</div>
+                <div class="cred-status">凭证：<span class={v.hasCredentials ? "cred-ok" : "cred-no"}>{v.hasCredentials ? "✓ 已配置" : "✗ 未配置"}</span></div>
                 <Show when={editVendor() === v.id} fallback={
-                  <button onClick={() => startEdit(v)} style={{ ...btnStyle, "margin-top": "0", padding: "4px 10px", "font-size": "12px" }}>
-                    {v.hasCredentials ? "修改凭证" : "配置凭证"}
-                  </button>
+                  <button class="btn btn-ghost btn-sm" onClick={() => startEdit(v)}>{v.hasCredentials ? "修改" : "配置"}</button>
                 }>
-                  <For each={v.inputs}>
-                    {(input: any) => (
-                      <div style={{ "margin-top": "4px" }}>
-                        <input
-                          type={input.type}
-                          placeholder={input.label}
-                          value={credInputs()[input.key] || ""}
-                          onInput={(e) => setCredInputs({ ...credInputs(), [input.key]: e.currentTarget.value })}
-                          style={{ ...inputStyle, padding: "4px", "font-size": "12px" }}
-                        />
-                      </div>
-                    )}
-                  </For>
-                  <div style={{ "margin-top": "6px" }}>
-                    <button onClick={() => saveCreds(v.id)} style={{ ...btnStyle, "margin-top": "0", padding: "4px 10px", "font-size": "12px" }}>保存</button>
-                    <button onClick={() => setEditVendor(null)} style={{ ...btnStyle, "margin-top": "0", "margin-left": "4px", padding: "4px 10px", "font-size": "12px", background: "#888" }}>取消</button>
+                  <For each={v.inputs}>{(input: any) => (
+                    <input class="field" type={input.type} placeholder={input.label} value={credInputs()[input.key] || ""} onInput={(e) => setCredInputs({ ...credInputs(), [input.key]: e.currentTarget.value })} style={{ "margin-bottom": "6px" }} />
+                  )}</For>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button class="btn btn-primary btn-sm" onClick={() => saveCreds(v.id)}>保存</button>
+                    <button class="btn btn-ghost btn-sm" onClick={() => setEditVendor(null)}>取消</button>
                   </div>
                 </Show>
               </div>
             )}
           </For>
         </div>
-
-        <h3 style={{ "margin-top": "20px" }}>任务槽绑定</h3>
-        <div style={{ "font-size": "12px", color: "#888", "margin-bottom": "8px" }}>每个任务槽决定该能力用哪个模型</div>
+        <div class="divider-label" style={{ "margin-top": "24px" }}>任务槽绑定</div>
         <For each={settings().taskSlots || []}>
           {(slot: any) => {
             const allModels = (settings().vendors || []).flatMap((v: any) => v.models);
             return (
-              <div style={{ display: "flex", gap: "8px", "align-items": "center", "margin-bottom": "6px" }}>
-                <span style={{ "min-width": "100px", "font-weight": 500, "font-size": "13px" }}>{slot.slotKey}</span>
-                <select
-                  value={slot.modelId || ""}
-                  onChange={(e) => bindSlot(slot.slotKey, e.currentTarget.value)}
-                  style={{ ...inputStyle, width: "auto", "font-size": "12px" }}
-                >
-                  <For each={allModels}>
-                    {(m: any) => <option value={m.id}>{m.id}</option>}
-                  </For>
+              <div class="slot-row">
+                <span class="slot-key">{slot.slotKey}</span>
+                <select class="field" style={{ width: "auto", "font-size": "12px" }} value={slot.modelId || ""} onChange={(e) => bindSlot(slot.slotKey, e.currentTarget.value)}>
+                  <For each={allModels}>{(m: any) => <option value={m.id}>{m.id}</option>}</For>
                 </select>
               </div>
             );
@@ -400,53 +326,31 @@ function SettingsSection() {
 }
 
 function TimelineRow(props: { item: any }) {
-  const color = () => {
+  const cls = () => {
     switch (props.item.type) {
-      case "agent": return "#2563eb";
-      case "tool": return "#7c3aed";
-      case "media": return "#16a34a";
-      case "system": return "#888";
-      default: return "#333";
+      case "agent": return "tl-agent";
+      case "tool": return "tl-tool";
+      case "media": return "tl-media";
+      default: return "tl-system";
     }
   };
   const icon = () => {
     switch (props.item.type) {
-      case "agent": return "🤖";
-      case "tool": return "🔧";
-      case "media": return "🖼️";
-      case "system": return "•";
-      default: return "•";
+      case "agent": return "AI";
+      case "tool": return "⚙";
+      case "media": return "◉";
+      default: return "·";
     }
   };
   return (
-    <div style={{ "margin-bottom": "8px", "padding-left": "4px", "border-left": `3px solid ${color()}` }}>
-      <span style={{ "margin-right": "6px" }}>{icon()}</span>
-      <span style={{ "font-weight": props.item.type === "agent" ? 600 : 400, color: color() }}>
-        {props.item.text || props.item.toolName}
-      </span>
-      <Show when={props.item.mediaUrl}>
-        <div style={{ "margin-top": "4px" }}>
-          <img src={props.item.mediaUrl} style={{ "max-width": "120px", "border-radius": "4px" }} />
-        </div>
-      </Show>
+    <div class="timeline-row">
+      <div class={`timeline-icon ${cls()}`}>{icon()}</div>
+      <div style={{ flex: 1 }}>
+        <div class={`timeline-text ${props.item.type === "agent" ? "agent" : ""}`}>{props.item.text || props.item.toolName}</div>
+        <Show when={props.item.mediaUrl}>
+          <img src={props.item.mediaUrl} style={{ "max-width": "120px", "border-radius": "4px", "margin-top": "6px" }} alt="" />
+        </Show>
+      </div>
     </div>
   );
 }
-
-const inputStyle = {
-  width: "100%",
-  padding: "6px 8px",
-  "border-radius": "4px",
-  border: "1px solid #ccc",
-  "margin-top": "4px",
-  "box-sizing": "border-box" as const,
-};
-const btnStyle = {
-  "margin-top": "8px",
-  padding: "8px 16px",
-  background: "#2563eb",
-  color: "white",
-  border: "none",
-  "border-radius": "4px",
-  cursor: "pointer",
-};

@@ -1,4 +1,5 @@
 /* web/src/index.tsx — 入口 */
+import "./styles/global.css";
 import { render } from "solid-js/web";
 import App from "./App";
 
