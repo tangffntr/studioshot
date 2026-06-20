@@ -43,3 +43,6 @@ data/oss/[0-9a-f]/
 
 data/app.sqlite-wal
 data/app.sqlite-shm
+
+# Windows reserved name artifact
+nul
