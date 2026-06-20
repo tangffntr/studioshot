@@ -44,7 +44,7 @@ export const generateImageTool = make<{ prompt: string; referenceMediaIds: strin
         size: input.size,
       });
       await facade.run();
-      const result = await facade.save(filePath, productId, input.prompt);
+      const result = await facade.save(filePath, productId, input.prompt, ctx.jobId);
 
       return {
         mediaId: result.mediaId,

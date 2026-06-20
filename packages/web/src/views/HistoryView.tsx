@@ -1,6 +1,7 @@
-/** web/src/views/HistoryView.tsx — 历史记录列表 */
+/** web/src/views/HistoryView.tsx — 历史记录列表，点击查看对话详情 */
 import { For, Show, onMount } from "solid-js";
-import { state, loadJobs, type JobSummary } from "../context/store";
+import { useNavigate } from "@solidjs/router";
+import { state, loadJobs, loadJobConversation, type JobSummary } from "../context/store";
 
 function timeAgo(ts: number): string {
   const s = Math.floor((Date.now() - ts) / 1000);
@@ -11,7 +12,14 @@ function timeAgo(ts: number): string {
 }
 
 export default function HistoryView() {
+  const navigate = useNavigate();
   onMount(loadJobs);
+
+  const openJob = async (jobId: string) => {
+    await loadJobConversation(jobId);
+    navigate("/");
+  };
+
   return (
     <div class="view-page">
       <h1 class="font-display">历史记录</h1>
@@ -19,10 +27,10 @@ export default function HistoryView() {
         <div style={{ color: "var(--fg-mute)", "text-align": "center", padding: "40px" }}>暂无任务记录</div>
       </Show>
       <For each={state.jobs}>{(job: JobSummary) => (
-        <div class="history-list-item">
+        <div class="history-list-item" onClick={() => openJob(job.id)}>
           <div class="hli-info">
             <div class="hli-title">{job.instruction.slice(0, 60)}</div>
-            <div class="hli-meta">{job.productName || "未知产品"} · {job.type} · {timeAgo(job.createdAt)}</div>
+            <div class="hli-meta">{job.productName || "无产品图"} · {job.type} · {timeAgo(job.createdAt)}</div>
           </div>
           <span class={`hli-status ${job.status}`}>{job.status}</span>
         </div>

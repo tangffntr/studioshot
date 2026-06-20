@@ -3,14 +3,17 @@
  * 左侧菜单栏 + 右侧主区（children 由 Router 注入）
  */
 import { createSignal, onMount, Show, For } from "solid-js";
-import { A } from "@solidjs/router";
-import { state, setState, connectSSE, loadJobs, newConversation, type JobSummary } from "./context/store";
+import { A, useNavigate } from "@solidjs/router";
+import { state, setState, connectSSE, loadJobs, loadJobConversation, newConversation, type JobSummary } from "./context/store";
 import { toggleTheme } from "./context/theme";
 
 export function AppLayout(props: { children?: any }) {
   const [collapsed, setCollapsed] = createSignal(false);
+  const navigate = useNavigate();
 
   onMount(() => { connectSSE(); loadJobs(); setInterval(loadJobs, 10000); });
+
+  const openJob = async (jobId: string) => { await loadJobConversation(jobId); navigate("/"); };
 
   return (
     <div class="app-layout">
@@ -42,7 +45,7 @@ export function AppLayout(props: { children?: any }) {
           <div class="nav-section-label">最近任务</div>
           <For each={state.jobs.slice(0, 12)}>
             {(job: JobSummary) => (
-              <div class="history-item" title={job.instruction}>
+              <div class="history-item" title={job.instruction} onClick={() => openJob(job.id)}>
                 {job.instruction.slice(0, 26)}
                 <span class="h-status">· {job.status}</span>
               </div>

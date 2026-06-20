@@ -74,6 +74,39 @@ export async function loadJobs() {
   try { setState("jobs", await fetch("/api/jobs").then((r) => r.json())); } catch {}
 }
 
+/** 加载某个历史 job 的对话（重建消息流 + 产出物） */
+export async function loadJobConversation(jobId: string) {
+  try {
+    const job = await fetch(`/api/jobs/${jobId}`).then((r) => r.json());
+    const mediaList = await fetch(`/api/media?jobId=${jobId}`).then((r) => r.json());
+
+    // 重建消息流
+    const msgs: ChatMessage[] = [];
+    msgs.push({ id: crypto.randomUUID(), role: "user", text: job.instruction, ts: job.createdAt });
+    if (job.error) msgs.push({ id: crypto.randomUUID(), role: "system", text: `任务失败：${job.error}`, ts: job.finishedAt || job.createdAt });
+    // 产出图作为 media 消息
+    const outputs: OutputMedia[] = mediaList.map((m: any) => ({
+      id: m.id, url: m.url, promptText: m.promptText, slotCode: m.slotCode, sortOrder: m.sortOrder,
+    }));
+    for (const m of mediaList) {
+      msgs.push({ id: crypto.randomUUID(), role: "media", mediaId: m.id, mediaUrl: m.url, slotCode: m.slotCode, promptText: m.promptText, ts: m.createdAt });
+    }
+    // 完成总结
+    if (job.status === "done" && job.result) {
+      try {
+        const r = JSON.parse(job.result);
+        if (r.text) msgs.push({ id: crypto.randomUUID(), role: "agent", text: r.text, ts: job.finishedAt || job.createdAt });
+      } catch {}
+    }
+
+    setState("currentJobId", jobId);
+    setState("jobStatus", job.status);
+    setState("jobProgress", job.progress || 0);
+    setState("messages", msgs);
+    setState("outputMedia", outputs);
+  } catch {}
+}
+
 /** 新建对话（清空当前消息） */
 export function newConversation() {
   setState("currentJobId", null);
