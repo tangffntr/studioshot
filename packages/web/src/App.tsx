@@ -81,15 +81,23 @@ export function AppLayout(props: { children?: any }) {
   );
 }
 
-/** 右侧产出栏：当前 job 产出的图 + prompt（可编辑重生成） */
+/** 右侧产出栏：可折叠 + 产出图 + prompt编辑 + 重生成 */
 function OutputPanel() {
+  const [collapsed, setCollapsed] = createSignal(false);
   return (
-    <aside class="output-panel">
+    <aside class={`output-panel ${collapsed() ? "collapsed" : ""}`}>
       <div class="output-panel-header">
         <span class="font-mono" style={{ "font-size": "10px", "letter-spacing": "0.1em", "text-transform": "uppercase", color: "var(--fg-mute)" }}>产出物</span>
-        <span class="hint">{state.outputMedia.length} 项</span>
+        <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+          <span class="hint">{state.outputMedia.length} 项</span>
+          <button class="collapse-btn" style={{ "font-size": "14px" }} onClick={() => setCollapsed(!collapsed())} title="折叠/展开">
+            {collapsed() ? "◀" : "▶"}
+          </button>
+        </div>
       </div>
-      <For each={state.outputMedia}>{(m, i) => <OutputCard media={m} index={i()} />}</For>
+      <Show when={!collapsed()}>
+        <For each={state.outputMedia}>{(m, i) => <OutputCard media={m} index={i()} />}</For>
+      </Show>
     </aside>
   );
 }
@@ -97,11 +105,35 @@ function OutputPanel() {
 function OutputCard(props: { media: any; index: number }) {
   const [editing, setEditing] = createSignal(false);
   const [draft, setDraft] = createSignal(props.media.promptText || "");
+  const [regenerating, setRegenerating] = createSignal(false);
 
   const save = async () => {
     await fetch(`/api/media/${props.media.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ promptText: draft() }) });
     setEditing(false);
     setState("outputMedia", props.index, "promptText", draft());
+  };
+
+  // 重生成：用（修改后的）prompt 提交新 agent job
+  const regenerate = async () => {
+    const prompt = editing() ? draft() : (props.media.promptText || "");
+    setRegenerating(true);
+    try {
+      // 先保存修改的 prompt
+      if (editing()) await save();
+      // 提交新 job（纯文本出图，无产品图，用 prompt 直接生成）
+      const job = await fetch("/api/jobs", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instruction: prompt, mode: "agent" }),
+      }).then((r) => r.json());
+      setState("currentJobId", job.jobId);
+      setState("jobStatus", "queued");
+      // 添加系统消息提示重生成
+      setState("messages", (m) => [...m, { id: crypto.randomUUID(), role: "system" as const, text: `🔄 重生成中：${prompt.slice(0, 40)}...`, ts: Date.now() }]);
+    } catch (e: any) {
+      console.error("重生成失败", e);
+    } finally {
+      setRegenerating(false);
+    }
   };
 
   return (
@@ -114,11 +146,16 @@ function OutputCard(props: { media: any; index: number }) {
         </div>
       }>
         <textarea class="output-prompt-edit" value={draft()} onInput={(e) => setDraft(e.currentTarget.value)} rows={3} />
-        <div style={{ display: "flex", gap: "6px", "margin-top": "4px" }}>
+      </Show>
+      <div style={{ display: "flex", gap: "6px", "margin-top": "6px" }}>
+        <Show when={editing()}>
           <button class="btn btn-primary btn-sm" onClick={save}>保存</button>
           <button class="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>取消</button>
-        </div>
-      </Show>
+        </Show>
+        <button class="btn btn-ghost btn-sm" onClick={regenerate} disabled={regenerating()} style={{ "margin-left": "auto" }} title="用此 prompt 重新生成">
+          {regenerating() ? "⏳" : "🔄 重生成"}
+        </button>
+      </div>
     </div>
   );
 }

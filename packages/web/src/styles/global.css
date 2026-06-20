@@ -744,3 +744,9 @@ select.field { appearance: none; background-image: url("data:image/svg+xml,%3Csv
   resize: vertical;
   outline: none;
 }
+
+/* 产出栏折叠态 */
+.output-panel.collapsed { width: 40px; }
+.output-panel.collapsed .output-card,
+.output-panel.collapsed .output-panel-header span:first-child,
+.output-panel.collapsed .output-panel-header .hint { display: none; }
