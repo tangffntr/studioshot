@@ -332,7 +332,7 @@ router.patch("/api/media/:id", (req, res) => {
 router.get("/api/materials", (_req, res) => {
   const db = getDb();
   const list = db.select().from(materials).all().sort((a, b) => b.createdAt - a.createdAt);
-  res.json(list.map((m) => ({ ...m, url: oss.getFileUrl(m.filePath) })));
+  res.json(list.map((m) => ({ ...m, url: m.filePath ? oss.getFileUrl(m.filePath) : null })));
 });
 
 /** POST /api/materials — 从 media 转存为素材（或手动创建） */
@@ -366,7 +366,7 @@ router.delete("/api/materials/:id", async (req, res) => {
   const db = getDb();
   const m = db.select().from(materials).where(eq(materials.id, req.params.id)).all()[0];
   if (!m) return res.status(404).json({ error: "not found" });
-  await oss.deleteFile(m.filePath).catch(() => {});
+  if (m.filePath) await oss.deleteFile(m.filePath).catch(() => {});
   db.delete(materials).where(eq(materials.id, req.params.id)).run();
   res.json({ ok: true });
 });

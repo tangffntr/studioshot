@@ -97,8 +97,10 @@ export function initSchema(): void {
     );
     CREATE TABLE IF NOT EXISTS materials (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, prompt_text TEXT,
-      file_path TEXT NOT NULL, source_media_id TEXT,
-      kind TEXT NOT NULL DEFAULT 'image', created_at INTEGER NOT NULL
+      file_path TEXT, source_media_id TEXT,
+      kind TEXT NOT NULL DEFAULT 'image',
+      platform TEXT, category TEXT,
+      created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_media_product ON media(product_id);
     CREATE INDEX IF NOT EXISTS idx_media_asset ON media(asset_id);

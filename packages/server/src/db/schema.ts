@@ -146,14 +146,16 @@ export const platformSpecs = sqliteTable("platform_specs", {
   textRenderPref: text("text_render_pref"), // 中文|英文
 });
 
-/** 素材库（可复用：用户从资产转存，或手动添加） */
+/** 素材库（可复用：prompt骨架/参考图/转存图） */
 export const materials = sqliteTable("materials", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   promptText: text("prompt_text"),
-  filePath: text("file_path").notNull(),
-  sourceMediaId: text("source_media_id"), // 从哪个 media 转存
-  kind: text("kind").notNull().default("image"), // image | scene-ref
+  filePath: text("file_path"), // 纯 prompt 骨架素材可为 null
+  sourceMediaId: text("source_media_id"),
+  kind: text("kind").notNull().default("image"), // image | prompt-skeleton
+  platform: text("platform"), // taobao|jd|douyin|pdd|null(通用)
+  category: text("category"), // hero|detail|lifestyle|infographic
   createdAt: integer("created_at").notNull(),
 });
 

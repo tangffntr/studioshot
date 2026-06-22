@@ -4,7 +4,7 @@
  * 幂等：已存在则跳过。
  */
 import { getDb } from "./client";
-import { vendors, vendorCredentials, models, taskSlots, templates, templateSlots, platformSpecs } from "./schema";
+import { vendors, vendorCredentials, models, taskSlots, templates, templateSlots, platformSpecs, materials } from "./schema";
 import { eq } from "drizzle-orm";
 import { encryptCredentials } from "../model-manager/credentials";
 
@@ -80,6 +80,8 @@ export function seedDefaults(): void {
 
   // 7. 内置模板
   seedTemplates();
+  // 8. 内置素材（prompt 骨架）
+  seedBuiltinMaterials();
 }
 
 /** 亚马逊 PDP 套图的 14 个图位定义（可行性报告 §6.3） */
@@ -153,6 +155,44 @@ function seedTemplates(): void {
         purpose: s.purpose, sequence: s.sequence, sceneType: s.sceneType,
         sizePreset: s.size, taskSlotKey: s.taskSlot, promptSkeleton: s.skeleton,
         required: 1, notes: s.notes,
+      }).run();
+    }
+  }
+}
+
+/** 内置 prompt 骨架素材（各平台×各场景，纯 prompt 无图片） */
+const BUILTIN_MATERIALS = [
+  // 通用
+  { name: "白底主图（通用）", kind: "prompt-skeleton", platform: null, category: "hero", prompt: "Clean white background product photo, product centered, studio lighting, sharp focus, e-commerce hero shot. High detail, no text overlay." },
+  { name: "生活场景图（通用）", kind: "prompt-skeleton", platform: null, category: "lifestyle", prompt: "Lifestyle scene photo with the product in a realistic home environment, natural lighting, shallow depth of field, warm and inviting atmosphere." },
+  { name: "细节特写图（通用）", kind: "prompt-skeleton", platform: null, category: "detail", prompt: "Extreme close-up macro shot showing material texture and craftsmanship detail. Studio lighting, white background." },
+  { name: "信息图/卖点图（通用）", kind: "prompt-skeleton", platform: null, category: "infographic", prompt: "Infographic product image with 3-4 key benefits shown as icons with short labels. Clean modern layout, white background, professional design." },
+  // 淘宝
+  { name: "淘宝白底主图", kind: "prompt-skeleton", platform: "taobao", category: "hero", prompt: "淘宝风格白底主图：产品居中，纯白背景(#FFFFFF)，800x800正方形，明亮均匀光照，产品清晰无文字水印，突出质感。" },
+  { name: "淘宝场景图", kind: "prompt-skeleton", platform: "taobao", category: "lifestyle", prompt: "淘宝风格生活场景图：产品融入真实使用场景，自然光，暖调，手机端友好的竖图构图，突出使用体验。" },
+  { name: "淘宝详情页信息图", kind: "prompt-skeleton", platform: "taobao", category: "detail", prompt: "淘宝详情页信息图：宽750px竖版，产品卖点用图标+短文案展示，清爽排版，白底为主，突出核心优势。" },
+  // 京东
+  { name: "京东白底主图", kind: "prompt-skeleton", platform: "jd", category: "hero", prompt: "京东风格主图：纯白背景强制要求，产品居中满画布，冷调专业风格，800x800正方形，高清无模糊，第一张必须白底。" },
+  { name: "京东详情页", kind: "prompt-skeleton", platform: "jd", category: "detail", prompt: "京东风格详情页：宽750px竖版，冷调专业排版，产品参数清晰展示，信任背书元素（质检/保障），简洁高端感。" },
+  // 抖音
+  { name: "抖音实物主图", kind: "prompt-skeleton", platform: "douyin", category: "hero", prompt: "抖音风格实物主图：真实感拍摄风格，非棚拍感，暖调生活化，800x800，第一张必须实物图不得全屏水印，短视频生态适配。" },
+  { name: "抖音种草图", kind: "prompt-skeleton", platform: "douyin", category: "lifestyle", prompt: "抖音种草风格图：手机拍摄感，真实生活场景，暖调滤镜，产品自然融入画面，有分享欲的构图，适合短视频封面。" },
+  // 拼多多
+  { name: "拼多多白底主图", kind: "prompt-skeleton", platform: "pdd", category: "hero", prompt: "拼多多风格主图：纯白底商品居中，高对比度突出产品，750x750正方形，不可加水印文字，突出性价比，简洁明了。" },
+  { name: "拼多多促销图", kind: "prompt-skeleton", platform: "pdd", category: "infographic", prompt: "拼多多风格促销图：高饱和色彩，产品大图居中，简洁价格标签风格，白底为主，突出优惠信息，适合价格敏感用户。" },
+];
+
+function seedBuiltinMaterials(): void {
+  const db = getDb();
+  const now = Date.now();
+  for (const m of BUILTIN_MATERIALS) {
+    const id = `builtin-mat-${m.platform || "common"}-${m.category}`;
+    const exists = db.select().from(materials).where(eq(materials.id, id)).all()[0];
+    if (!exists) {
+      db.insert(materials).values({
+        id, name: m.name, promptText: m.prompt, filePath: null,
+        sourceMediaId: null, kind: m.kind, platform: m.platform, category: m.category,
+        createdAt: now,
       }).run();
     }
   }
