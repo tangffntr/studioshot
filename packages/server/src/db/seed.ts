@@ -116,6 +116,22 @@ function seedTemplates(): void {
       textRenderPref: "英文",
     }).run();
   }
+  // 国内四大平台规格
+  const cnPlatforms = [
+    { platform: "taobao", heroSize: "1024x1024", detailSize: "1024x1536", heroCount: 5, rules: { firstImageWhiteBg: true, detailWidth: "750px", maxSize: "3MB" }, textRenderPref: "中文" },
+    { platform: "jd", heroSize: "1024x1024", detailSize: "1024x1536", heroCount: 6, rules: { firstImageWhiteBg: true, mandatory: "第1张必须纯白底", detailWidth: "750px" }, textRenderPref: "中文" },
+    { platform: "douyin", heroSize: "1024x1024", detailSize: "1024x1536", heroCount: 5, rules: { firstImageReal: true, style: "生活化短视频", detailRatio: "16:9" }, textRenderPref: "中文" },
+    { platform: "pdd", heroSize: "1024x1024", detailSize: "1024x1536", heroCount: 10, rules: { firstImageWhiteBg: true, mandatory: "纯白底商品居中", maxHeroSize: "1MB" }, textRenderPref: "中文" },
+  ];
+  for (const p of cnPlatforms) {
+    const exists = db.select().from(platformSpecs).where(eq(platformSpecs.platform, p.platform)).all()[0];
+    if (!exists) {
+      db.insert(platformSpecs).values({
+        platform: p.platform, heroSize: p.heroSize, detailSize: p.detailSize, heroCount: p.heroCount,
+        rules: JSON.stringify(p.rules), textRenderPref: p.textRenderPref,
+      }).run();
+    }
+  }
 
   // 模板主记录
   const tplId = "builtin-amazon-pdp";

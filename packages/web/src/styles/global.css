@@ -750,3 +750,49 @@ select.field { appearance: none; background-image: url("data:image/svg+xml,%3Csv
 .output-panel.collapsed .output-card,
 .output-panel.collapsed .output-panel-header span:first-child,
 .output-panel.collapsed .output-panel-header .hint { display: none; }
+
+/* 加号上传按钮 */
+.upload-plus-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.12s;
+}
+.upload-plus-btn:hover { color: var(--fg); border-color: var(--border-bright); }
+
+/* Lightbox 大图 */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  cursor: pointer;
+  animation: fadeIn 0.2s;
+}
+.lightbox-img {
+  max-width: 90vw;
+  max-height: 85vh;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.lightbox-hint {
+  position: absolute;
+  bottom: 20px;
+  color: rgba(255,255,255,0.5);
+  font-size: 12px;
+}
+
+/* 产出栏图片也可双击 */
+.output-card-img { cursor: zoom-in; }

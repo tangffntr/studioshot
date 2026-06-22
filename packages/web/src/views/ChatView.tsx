@@ -1,17 +1,25 @@
 /**
  * web/src/views/ChatView.tsx — 聊天视图
- * Agent 思想在消息流展示 + 底部输入框（模式选择 + 产品图上传）
+ * 加号上传 + 平台选择 + 多图模式 + 双击看大图
  */
 import { createSignal, Show, For } from "solid-js";
 import { state, setState } from "../context/store";
 import type { ChatMessage } from "../context/store";
 
 const MODES = [
-  { key: "agent", label: "Agent 单图" },
-  { key: "template", label: "模板套图" },
+  { key: "agent", label: "单图" },
+  { key: "template", label: "套图" },
   { key: "scene-swap", label: "场景替换" },
-  { key: "tryon", label: "虚拟试穿" },
-  { key: "video", label: "视频生成" },
+  { key: "tryon", label: "试穿" },
+  { key: "video", label: "视频" },
+];
+
+const PLATFORMS = [
+  { key: "", label: "通用" },
+  { key: "taobao", label: "淘宝" },
+  { key: "jd", label: "京东" },
+  { key: "douyin", label: "抖音" },
+  { key: "pdd", label: "拼多多" },
 ];
 
 function fileToBase64(file: File): Promise<string> {
@@ -24,11 +32,14 @@ function fileToBase64(file: File): Promise<string> {
 
 export default function ChatView() {
   const [mode, setMode] = createSignal("agent");
+  const [platform, setPlatform] = createSignal("");
   const [text, setText] = createSignal("");
   const [productImg, setProductImg] = createSignal<File | null>(null);
   const [imgName, setImgName] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
+  const [mergedOutput, setMergedOutput] = createSignal(false);
+  const [lightbox, setLightbox] = createSignal<string | null>(null);
   let fileInput: HTMLInputElement | undefined;
 
   const onFile = (e: Event) => {
@@ -41,13 +52,24 @@ export default function ChatView() {
     setError("");
     setBusy(true);
 
+    // 构建增强指令（含平台约束）
+    let instruction = text() || "生成图片";
+    if (platform()) {
+      const rules: Record<string, string> = {
+        taobao: "（淘宝规格：800x800白底主图，750px宽详情页，风格多样化）",
+        jd: "（京东规格：800x800纯白底强制，冷调专业风格）",
+        douyin: "（抖音规格：800x800实物图，暖调生活化，短视频风格）",
+        pdd: "（拼多多规格：750x750纯白底，高对比度，突出性价比）",
+      };
+      instruction += ` ${rules[platform()] || ""}`;
+    }
+    if (mergedOutput()) instruction += " 请将多张详情页子图合并到一张大图中展示（节约生图次数）";
+
     setState("messages", (m) => [...m, { id: crypto.randomUUID(), role: "user", text: text() || `[${mode()}] 出图请求`, ts: Date.now() }]);
-    // 新 job 开始时清空产出栏
     setState("outputMedia", []);
 
     try {
-      const jobBody: any = { instruction: text() || "生成图片" };
-      // 有产品图才上传（可选附件）
+      const jobBody: any = { instruction };
       if (productImg()) {
         const b64 = await fileToBase64(productImg()!);
         const up = await fetch("/api/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: imgName(), imageBase64: b64, imageMime: "image/png" }) }).then((r) => r.json());
@@ -72,45 +94,61 @@ export default function ChatView() {
 
   return (
     <div style={{ display: "flex", "flex-direction": "column", height: "100%", flex: 1 }}>
-      {/* 消息流 */}
       <div class="chat-stream">
         <div class="chat-inner">
           <Show when={state.messages.length === 0}>
             <div style={{ "text-align": "center", color: "var(--fg-mute)", padding: "60px 0" }}>
               <div style={{ "font-size": "36px", "margin-bottom": "12px", opacity: 0.3 }}>✦</div>
               <div class="font-display" style={{ "font-size": "20px", "margin-bottom": "6px" }}>Studio.Shot</div>
-              <div style={{ "font-size": "13px" }}>上传产品图，选择模式，描述需求，开始出图</div>
+              <div style={{ "font-size": "13px" }}>选择平台，描述需求，或点击 ＋ 上传产品图</div>
             </div>
           </Show>
-          <For each={state.messages}>{(msg: ChatMessage) => <MessageRow msg={msg} />}</For>
+          <For each={state.messages}>{(msg: ChatMessage) => <MessageRow msg={msg} onImageClick={(url) => setLightbox(url)} />}</For>
         </div>
       </div>
 
-      {/* 输入区 */}
       <div class="chat-input-area">
         <div class="chat-input-inner">
           <div class="mode-selector">
+            <For each={PLATFORMS}>{(p) => (
+              <span class={`mode-chip ${platform() === p.key ? "active" : ""}`} onClick={() => setPlatform(p.key)}>{p.label}</span>
+            )}</For>
+            <span style={{ width: "1px", height: "14px", background: "var(--border)", margin: "0 4px" }}></span>
             <For each={MODES}>{(m) => (
               <span class={`mode-chip ${mode() === m.key ? "active" : ""}`} onClick={() => setMode(m.key)}>{m.label}</span>
             )}</For>
-            <span class={`upload-chip ${imgName() ? "has-file" : ""}`} onClick={() => fileInput?.click()}>
-              {imgName() ? `📎 ${imgName().slice(0, 16)}` : "📎 产品图"}
-            </span>
-            <input ref={fileInput} type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} />
+            <Show when={mode() === "template" || mode() === "agent"}>
+              <label class="mode-chip" style={{ cursor: "pointer", display: "inline-flex", "align-items": "center", gap: "3px" }}>
+                <input type="checkbox" checked={mergedOutput()} onChange={(e) => setMergedOutput(e.currentTarget.checked)} style={{ width: "12px", height: "12px" }} />
+                多图合一
+              </label>
+            </Show>
           </div>
           <div class="input-row">
+            <button class="upload-plus-btn" onClick={() => fileInput?.click()} title="上传产品图（可选）">
+              {imgName() ? "📎" : "＋"}
+            </button>
+            <input ref={fileInput} type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} />
             <textarea value={text()} onInput={(e) => setText(e.currentTarget.value)} onKeyDown={onKeyDown}
-              placeholder={mode() === "template" ? "模板套图，描述可选..." : "描述你想要的图片..."} rows={1} />
+              placeholder={imgName() ? `已选: ${imgName().slice(0, 20)}... 描述需求或直接发送` : "描述你想要的图片，或点击 ＋ 上传产品图..."} rows={1} />
             <button class="send-btn" onClick={send} disabled={busy() || (!text().trim() && !productImg())}>↑</button>
           </div>
           <Show when={error()}><div class="error-msg">{error()}</div></Show>
         </div>
       </div>
+
+      {/* 双击大图 lightbox */}
+      <Show when={lightbox()}>
+        <div class="lightbox" onClick={() => setLightbox(null)}>
+          <img src={lightbox()!} class="lightbox-img" alt="" />
+          <div class="lightbox-hint">点击任意处关闭</div>
+        </div>
+      </Show>
     </div>
   );
 }
 
-function MessageRow(props: { msg: ChatMessage }) {
+function MessageRow(props: { msg: ChatMessage; onImageClick: (url: string) => void }) {
   if (props.msg.role === "user") {
     return <div class="msg-user"><div class="bubble">{props.msg.text}</div></div>;
   }
@@ -122,7 +160,10 @@ function MessageRow(props: { msg: ChatMessage }) {
       <div class={`msg-content ${props.msg.role === "agent" ? "agent" : ""}`}>
         {props.msg.text}
         <Show when={props.msg.mediaUrl}>
-          <div><img class="msg-img" src={props.msg.mediaUrl} alt="" />
+          <div>
+            <img class="msg-img" src={props.msg.mediaUrl} alt=""
+              onDblClick={() => props.onImageClick(props.msg.mediaUrl!)}
+              style={{ cursor: "zoom-in" }} title="双击查看大图" />
             <Show when={props.msg.slotCode}><span class="slot-badge" style={{ "margin-left": "6px" }}>{props.msg.slotCode}</span></Show>
           </div>
         </Show>
