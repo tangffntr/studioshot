@@ -41,8 +41,10 @@ data/verify/
 # 测试上传的产品图残留
 data/oss/[0-9a-f]/
 
-data/app.sqlite-wal
-data/app.sqlite-shm
+# SQLite 数据库（运行时生成，含历史记录，不提交）
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
 
 # Windows reserved name artifact
 nul
