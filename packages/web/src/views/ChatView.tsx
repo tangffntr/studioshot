@@ -40,7 +40,19 @@ export default function ChatView() {
   const [error, setError] = createSignal("");
   const [mergedOutput, setMergedOutput] = createSignal(false);
   const [lightbox, setLightbox] = createSignal<string | null>(null);
+  // 素材库选择
+  const [materials, setMaterials] = createSignal<Array<any>>([]);
+  const [showMaterials, setShowMaterials] = createSignal(false);
+  const [selMaterial, setSelMaterial] = createSignal<any | null>(null); // 选中的素材（prompt+参考图）
   let fileInput: HTMLInputElement | undefined;
+
+  const loadMaterials = async () => { try { setMaterials(await fetch("/api/materials").then(r => r.json())); } catch {} };
+
+  const pickMaterial = (m: any) => {
+    setSelMaterial(m);
+    setShowMaterials(false);
+    if (m.promptText && !text()) setText(m.promptText); // 自动填入素材 prompt
+  };
 
   const onFile = (e: Event) => {
     const f = (e.target as HTMLInputElement).files?.[0];
@@ -75,6 +87,11 @@ export default function ChatView() {
         const up = await fetch("/api/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: imgName(), imageBase64: b64, imageMime: "image/png" }) }).then((r) => r.json());
         jobBody.productId = up.productId;
         jobBody.attachments = [up.mediaId];
+      }
+      // 素材参考图（选了素材时，其 sourceMediaId 作为额外参考）
+      if (selMaterial()?.sourceMediaId) {
+        if (!jobBody.attachments) jobBody.attachments = [];
+        jobBody.attachments.push(selMaterial().sourceMediaId);
       }
       if (mode() === "template") jobBody.templateId = "builtin-amazon-pdp";
       else jobBody.mode = mode() === "agent" ? "agent" : mode();
@@ -129,6 +146,9 @@ export default function ChatView() {
               {imgName() ? "📎" : "＋"}
             </button>
             <input ref={fileInput} type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} />
+            <button class="upload-plus-btn" onClick={() => { loadMaterials(); setShowMaterials(true); }} title="选择素材">
+              {selMaterial() ? "★" : "▦"}
+            </button>
             <textarea value={text()} onInput={(e) => setText(e.currentTarget.value)} onKeyDown={onKeyDown}
               placeholder={imgName() ? `已选: ${imgName().slice(0, 20)}... 描述需求或直接发送` : "描述你想要的图片，或点击 ＋ 上传产品图..."} rows={1} />
             <button class="send-btn" onClick={send} disabled={busy() || (!text().trim() && !productImg())}>↑</button>
@@ -136,6 +156,27 @@ export default function ChatView() {
           <Show when={error()}><div class="error-msg">{error()}</div></Show>
         </div>
       </div>
+
+      {/* 素材选择弹窗 */}
+      <Show when={showMaterials()}>
+        <div class="lightbox" onClick={() => setShowMaterials(false)}>
+          <div class="material-picker" onClick={(e) => e.stopPropagation()}>
+            <div class="font-display" style={{ "font-size": "16px", "margin-bottom": "12px" }}>选择素材</div>
+            <Show when={materials().length === 0}>
+              <div class="hint">暂无素材。在资产库中「存为素材」添加。</div>
+            </Show>
+            <div class="material-picker-grid">
+              <For each={materials()}>{(m) => (
+                <div class="material-pick-item" onClick={() => pickMaterial(m)}>
+                  <img src={m.url} alt={m.name} />
+                  <div class="hint" style={{ "font-size": "10px", "text-align": "center" }}>{m.name}</div>
+                </div>
+              )}</For>
+            </div>
+            <button class="btn btn-ghost btn-sm" style={{ "margin-top": "10px" }} onClick={() => setShowMaterials(false)}>关闭</button>
+          </div>
+        </div>
+      </Show>
 
       {/* 双击大图 lightbox */}
       <Show when={lightbox()}>
