@@ -43,15 +43,16 @@ export default function ChatView() {
   // 素材库选择
   const [materials, setMaterials] = createSignal<Array<any>>([]);
   const [showMaterials, setShowMaterials] = createSignal(false);
-  const [selMaterial, setSelMaterial] = createSignal<any | null>(null); // 选中的素材（prompt+参考图）
+  const [selMaterial, setSelMaterial] = createSignal<any | null>(null);
   let fileInput: HTMLInputElement | undefined;
+  let textareaEl: HTMLTextAreaElement | undefined;
 
   const loadMaterials = async () => { try { setMaterials(await fetch("/api/materials").then(r => r.json())); } catch {} };
 
   const pickMaterial = (m: any) => {
     setSelMaterial(m);
     setShowMaterials(false);
-    if (m.promptText && !text()) setText(m.promptText); // 自动填入素材 prompt
+    // 不填入输入框，发送时自动拼接
   };
 
   const onFile = (e: Event) => {
@@ -59,13 +60,26 @@ export default function ChatView() {
     if (f) { setProductImg(f); setImgName(f.name); }
   };
 
+  // textarea 自适应高度
+  const autoResize = (el: HTMLTextAreaElement) => {
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+  };
+
   const send = async () => {
     if (!text().trim() && !productImg()) return;
     setError("");
     setBusy(true);
 
-    // 构建增强指令（含平台约束）
-    let instruction = text() || "生成图片";
+    // 构建增强指令：用户输入 + 素材 prompt 自动拼接
+    let instruction = text() || "";
+    // 选了素材时，把素材 prompt 拼接到指令前（用户输入为主，素材为辅）
+    if (selMaterial()?.promptText) {
+      const matPrompt = selMaterial().promptText;
+      instruction = instruction ? `${matPrompt}\n\n用户补充要求：${instruction}` : matPrompt;
+    }
+    if (!instruction && !productImg()) return;
+    if (!instruction) instruction = "生成图片";
     if (platform()) {
       const rules: Record<string, string> = {
         taobao: "（淘宝规格：800x800白底主图，750px宽详情页，风格多样化）",
@@ -149,8 +163,8 @@ export default function ChatView() {
             <button class="upload-plus-btn" onClick={() => { loadMaterials(); setShowMaterials(true); }} title="选择素材">
               {selMaterial() ? "★" : "▦"}
             </button>
-            <textarea value={text()} onInput={(e) => setText(e.currentTarget.value)} onKeyDown={onKeyDown}
-              placeholder={imgName() ? `已选: ${imgName().slice(0, 20)}... 描述需求或直接发送` : "描述你想要的图片，或点击 ＋ 上传产品图..."} rows={1} />
+            <textarea ref={textareaEl} value={text()} onInput={(e) => { setText(e.currentTarget.value); autoResize(e.currentTarget); }} onKeyDown={onKeyDown}
+              placeholder={selMaterial() ? `素材已选: ${selMaterial().name}，输入补充要求或直接发送` : imgName() ? `已选: ${imgName().slice(0, 20)}... 描述需求或直接发送` : "描述你想要的图片，或点击 ＋ 上传产品图..."} rows={2} />
             <button class="send-btn" onClick={send} disabled={busy() || (!text().trim() && !productImg())}>↑</button>
           </div>
           <Show when={error()}><div class="error-msg">{error()}</div></Show>

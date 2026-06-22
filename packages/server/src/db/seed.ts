@@ -163,10 +163,10 @@ function seedTemplates(): void {
 /** 内置 prompt 骨架素材（各平台×各场景，纯 prompt 无图片） */
 const BUILTIN_MATERIALS = [
   // 通用
-  { name: "白底主图（通用）", kind: "prompt-skeleton", platform: null, category: "hero", prompt: "Clean white background product photo, product centered, studio lighting, sharp focus, e-commerce hero shot. High detail, no text overlay." },
-  { name: "生活场景图（通用）", kind: "prompt-skeleton", platform: null, category: "lifestyle", prompt: "Lifestyle scene photo with the product in a realistic home environment, natural lighting, shallow depth of field, warm and inviting atmosphere." },
-  { name: "细节特写图（通用）", kind: "prompt-skeleton", platform: null, category: "detail", prompt: "Extreme close-up macro shot showing material texture and craftsmanship detail. Studio lighting, white background." },
-  { name: "信息图/卖点图（通用）", kind: "prompt-skeleton", platform: null, category: "infographic", prompt: "Infographic product image with 3-4 key benefits shown as icons with short labels. Clean modern layout, white background, professional design." },
+  { name: "白底主图（通用）", kind: "prompt-skeleton", platform: null, category: "hero", prompt: "白底主图：产品居中，纯白背景，明亮均匀的影棚光照，产品清晰锐利，电商主图风格，高细节，无文字水印。" },
+  { name: "生活场景图（通用）", kind: "prompt-skeleton", platform: null, category: "lifestyle", prompt: "生活场景图：产品融入真实的家居使用场景，自然光，浅景深，温馨舒适的氛围，突出使用体验。" },
+  { name: "细节特写图（通用）", kind: "prompt-skeleton", platform: null, category: "detail", prompt: "细节特写图：极近距离微距拍摄，展示材质纹理和工艺细节，影棚光照，白色背景。" },
+  { name: "信息图/卖点图（通用）", kind: "prompt-skeleton", platform: null, category: "infographic", prompt: "信息图：3-4个核心卖点用图标加短文案展示，清爽现代排版，白色背景，专业设计感。" },
   // 淘宝
   { name: "淘宝白底主图", kind: "prompt-skeleton", platform: "taobao", category: "hero", prompt: "淘宝风格白底主图：产品居中，纯白背景(#FFFFFF)，800x800正方形，明亮均匀光照，产品清晰无文字水印，突出质感。" },
   { name: "淘宝场景图", kind: "prompt-skeleton", platform: "taobao", category: "lifestyle", prompt: "淘宝风格生活场景图：产品融入真实使用场景，自然光，暖调，手机端友好的竖图构图，突出使用体验。" },
