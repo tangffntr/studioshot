@@ -81,9 +81,11 @@ export function AppLayout(props: { children?: any }) {
   );
 }
 
-/** 右侧产出栏：可折叠 + 产出图 + prompt编辑 + 重生成 */
+/** 右侧产出栏：可折叠 + 产出图 + prompt编辑 + 重生成 + 单击放大 */
 function OutputPanel() {
   const [collapsed, setCollapsed] = createSignal(false);
+  const [lightboxUrl, setLightboxUrl] = createSignal<string | null>(null);
+
   return (
     <aside class={`output-panel ${collapsed() ? "collapsed" : ""}`}>
       <div class="output-panel-header">
@@ -96,13 +98,19 @@ function OutputPanel() {
         </div>
       </div>
       <Show when={!collapsed()}>
-        <For each={state.outputMedia}>{(m, i) => <OutputCard media={m} index={i()} />}</For>
+        <For each={state.outputMedia}>{(m, i) => <OutputCard media={m} index={i()} onZoom={(url: string) => setLightboxUrl(url)} />}</For>
+      </Show>
+      <Show when={lightboxUrl()}>
+        <div class="lightbox" onClick={() => setLightboxUrl(null)}>
+          <img src={lightboxUrl()!} class="lightbox-img" alt="" />
+          <div class="lightbox-hint">点击任意处关闭</div>
+        </div>
       </Show>
     </aside>
   );
 }
 
-function OutputCard(props: { media: any; index: number }) {
+function OutputCard(props: { media: any; index: number; onZoom: (url: string) => void }) {
   const [editing, setEditing] = createSignal(false);
   const [draft, setDraft] = createSignal(props.media.promptText || "");
   const [regenerating, setRegenerating] = createSignal(false);
@@ -138,7 +146,10 @@ function OutputCard(props: { media: any; index: number }) {
 
   return (
     <div class="output-card">
-      <img src={props.media.url} class="output-card-img" alt="" />
+      <div style={{ position: "relative" }}>
+        <img src={props.media.url} class="output-card-img" alt="" />
+        <button class="zoom-overlay" onClick={() => props.onZoom(props.media.url)} title="放大查看">🔍</button>
+      </div>
       <Show when={props.media.slotCode}><span class="slot-badge">{props.media.slotCode}</span></Show>
       <Show when={editing()} fallback={
         <div class="output-prompt" onClick={() => { setDraft(props.media.promptText || ""); setEditing(true); }}>

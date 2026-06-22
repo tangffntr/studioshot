@@ -39,7 +39,6 @@ export default function ChatView() {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
   const [mergedOutput, setMergedOutput] = createSignal(false);
-  const [lightbox, setLightbox] = createSignal<string | null>(null);
   // 素材库选择
   const [materials, setMaterials] = createSignal<Array<any>>([]);
   const [showMaterials, setShowMaterials] = createSignal(false);
@@ -71,12 +70,24 @@ export default function ChatView() {
     setError("");
     setBusy(true);
 
-    // 构建增强指令：用户输入 + 素材 prompt 自动拼接
+    // 构建增强指令：用户输入 + 素材 prompt + 上下文 + 平台约束
     let instruction = text() || "";
-    // 选了素材时，把素材 prompt 拼接到指令前（用户输入为主，素材为辅）
+    // 选了素材时，把素材 prompt 拼接到指令前
     if (selMaterial()?.promptText) {
       const matPrompt = selMaterial().promptText;
       instruction = instruction ? `${matPrompt}\n\n用户补充要求：${instruction}` : matPrompt;
+    }
+    // 续接上下文：有历史对话时，把之前的输出和指令作为上下文追加
+    const prevMessages = state.messages;
+    if (prevMessages.length > 0) {
+      const contextParts = prevMessages
+        .filter((m) => m.role === "user" || m.role === "agent")
+        .slice(-4)
+        .map((m) => `${m.role === "user" ? "用户" : "AI"}：${m.text || ""}`)
+        .filter(Boolean);
+      if (contextParts.length) {
+        instruction = `【上下文】${contextParts.join(" | ")}\n\n${instruction}`;
+      }
     }
     if (!instruction && !productImg()) return;
     if (!instruction) instruction = "生成图片";
@@ -134,7 +145,7 @@ export default function ChatView() {
               <div style={{ "font-size": "13px" }}>选择平台，描述需求，或点击 ＋ 上传产品图</div>
             </div>
           </Show>
-          <For each={state.messages}>{(msg: ChatMessage) => <MessageRow msg={msg} onImageClick={(url) => setLightbox(url)} />}</For>
+          <For each={state.messages}>{(msg: ChatMessage) => <MessageRow msg={msg} />}</For>
         </div>
       </div>
 
@@ -191,19 +202,11 @@ export default function ChatView() {
           </div>
         </div>
       </Show>
-
-      {/* 双击大图 lightbox */}
-      <Show when={lightbox()}>
-        <div class="lightbox" onClick={() => setLightbox(null)}>
-          <img src={lightbox()!} class="lightbox-img" alt="" />
-          <div class="lightbox-hint">点击任意处关闭</div>
-        </div>
-      </Show>
     </div>
   );
 }
 
-function MessageRow(props: { msg: ChatMessage; onImageClick: (url: string) => void }) {
+function MessageRow(props: { msg: ChatMessage }) {
   if (props.msg.role === "user") {
     return <div class="msg-user"><div class="bubble">{props.msg.text}</div></div>;
   }
@@ -216,9 +219,7 @@ function MessageRow(props: { msg: ChatMessage; onImageClick: (url: string) => vo
         {props.msg.text}
         <Show when={props.msg.mediaUrl}>
           <div>
-            <img class="msg-img" src={props.msg.mediaUrl} alt=""
-              onDblClick={() => props.onImageClick(props.msg.mediaUrl!)}
-              style={{ cursor: "zoom-in" }} title="双击查看大图" />
+            <img class="msg-img" src={props.msg.mediaUrl} alt="" />
             <Show when={props.msg.slotCode}><span class="slot-badge" style={{ "margin-left": "6px" }}>{props.msg.slotCode}</span></Show>
           </div>
         </Show>
