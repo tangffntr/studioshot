@@ -22,6 +22,7 @@ import { eq } from "drizzle-orm";
 import { eventBus } from "./event-bus";
 import type { EventType, SseEvent } from "@ecom/shared";
 import type { ToolCtx } from "../tools/tool";
+import { readMediaBase64 } from "../tools/generate-image";
 
 const MAX_STEPS = 25;
 
@@ -31,6 +32,25 @@ const SYSTEM_PROMPT = `你是一个电商出图 Agent，负责根据用户指令
 - 用户给了产品图（消息中含 media id）→ 先 analyze_product 分析，再 generate_image 出图
 - 用户没给产品图，只是描述需求（如"生成一只猫"）→ 直接 generate_image（不传 referenceMediaIds），根据用户描述生成
 - 用户只是聊天提问（不需要图片）→ 直接文字回复，不调任何工具
+
+⭐ 续接对话规则（非常重要）：
+- 当用户消息中包含"重要提示：上面是上次生成的产品图片"时，说明这是续接对话
+- 此时必须将提示中指定的 mediaId 放入 generate_image 的 referenceMediaIds 数组
+- 这是图生图的关键：用上文的产品图作为参考，保持产品外观一致性
+- 即使用户只是说"换个场景"、"换个背景"，也要带上 referenceMediaIds
+
+⭐ 文字叠加规则（非常重要）：
+- 电商图片经常需要叠加文字（如促销信息、产品名称、价格、卖点等）
+- 在 generate_image 的 prompt 中，如果需要叠加文字，请使用以下格式：
+  "在[位置]添加文字'[内容]'"
+- 支持的位置：左上角、右上角、左下角、右下角、居中、顶部、底部
+- 示例：
+  - "在底部添加文字'限时特惠 仅售99元'"
+  - "在左上角写上'新品上市'"
+  - "在右下角标注'仅限今日'"
+- 叠加的文字会在后处理阶段被准确渲染到图片上，确保100%准确
+- 如果用户明确指定了文字内容和位置，按用户要求添加
+- 如果用户没有指定，根据产品特点和场景自动推断合适的文字
 
 工作流程（有产品图时）：
 1. analyze_product 分析产品图（只调一次）
@@ -55,6 +75,10 @@ export interface AgentRunOptions {
   instruction: string;
   /** 初始附带的产品图 media id（作为上下文） */
   initialMediaIds: string[];
+  /** 续接模式：之前的消息历史（OpenAI 格式） */
+  previousMessages?: any[];
+  /** 续接模式：上次生成的图片 mediaId（自动作为参考图） */
+  lastGeneratedMediaId?: string | null;
 }
 
 export interface AgentRunResult {
@@ -62,6 +86,8 @@ export interface AgentRunResult {
   steps: number;
   toolCalls: string[];
   mediaIds: string[];
+  /** 完整的消息历史（用于续接对话） */
+  conversationHistory: any[];
 }
 
 /** 获取主推理 LLM 的配置（orchestrator slot）— 返回原生 fetch 所需 */
@@ -128,11 +154,52 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResul
     emit: (e) => eventBus.publish(e as SseEvent),
   };
 
+  // 判断是续接模式还是新对话模式
+  const isContinuation = opts.previousMessages && opts.previousMessages.length > 0;
+
   // 初始 history（原生 OpenAI 格式）
-  const messages: any[] = [
-    { role: "system", content: SYSTEM_PROMPT },
-    { role: "user", content: opts.instruction + (opts.initialMediaIds.length ? `\n\n产品图 media id: ${opts.initialMediaIds.join(", ")}` : "") },
-  ];
+  let messages: any[];
+  if (isContinuation) {
+    // 续接模式：使用之前的消息历史 + 新的用户消息
+    messages = [...opts.previousMessages!];
+    // 构建续接的用户消息（包含上次生成的图片作为参考）
+    let userContent = opts.instruction;
+    if (opts.lastGeneratedMediaId) {
+      // 读取上次生成的图片并作为参考图
+      try {
+        const lastImageBase64 = await readMediaBase64(opts.lastGeneratedMediaId);
+        // readMediaBase64 返回的已经是 data:image/png;base64,xxx 格式，不需要再添加前缀
+        const imageUrl = lastImageBase64.startsWith("data:") ? lastImageBase64 : `data:image/png;base64,${lastImageBase64}`;
+
+        // 添加图片到用户消息（多模态格式）
+        messages.push({
+          role: "user",
+          content: [
+            { type: "text", text: userContent },
+            { type: "image_url", image_url: { url: imageUrl } },
+          ],
+        });
+        // ⭐ 明确告诉 LLM：这是上次的产品图，生成新图时必须作为 referenceMediaIds 传入
+        messages.push({
+          role: "user",
+          content: `重要提示：上面是上次生成的产品图片（mediaId: ${opts.lastGeneratedMediaId}）。
+当调用 generate_image 工具时，必须将 "${opts.lastGeneratedMediaId}" 放入 referenceMediaIds 数组中，以确保产品外观一致性。
+用户要求：${userContent}`,
+        });
+      } catch (e) {
+        // 读取失败则只用文本
+        messages.push({ role: "user", content: userContent });
+      }
+    } else {
+      messages.push({ role: "user", content: userContent });
+    }
+  } else {
+    // 新对话模式
+    messages = [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: opts.instruction + (opts.initialMediaIds.length ? `\n\n产品图 media id: ${opts.initialMediaIds.join(", ")}` : "") },
+    ];
+  }
 
   emit("job.started" as EventType, { jobId: opts.jobId });
 
@@ -156,7 +223,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResul
       // 无工具调用 → 循环结束
       console.log(`[agent] job=${opts.jobId.slice(0,8)} 完成 step=${steps}`);
       emit("job.progress" as EventType, { jobId: opts.jobId, progress: 100, message: "完成" });
-      return { finalText: assistantText, steps, toolCalls: toolCallsLog, mediaIds };
+      return { finalText: assistantText, steps, toolCalls: toolCallsLog, mediaIds, conversationHistory: messages };
     }
 
     // assistant 消息含 tool_calls（原生 OpenAI 格式：tool_calls 在 message 上）
@@ -218,5 +285,5 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResul
 
   // 超出最大步数
   emit("job.failed" as EventType, { jobId: opts.jobId, error: `超过最大步数 ${MAX_STEPS}` });
-  return { finalText: "达到最大步数限制", steps, toolCalls: toolCallsLog, mediaIds };
+  return { finalText: "达到最大步数限制", steps, toolCalls: toolCallsLog, mediaIds, conversationHistory: messages };
 }

@@ -10,5 +10,6 @@ export * from "./types";
 // Zod schema
 export * from "./schemas/tools";
 export * from "./schemas/api";
+export * from "./schemas/blueprint";
 
 export const PACKAGE_NAME = "@ecom/shared";

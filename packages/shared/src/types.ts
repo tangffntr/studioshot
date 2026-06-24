@@ -92,12 +92,14 @@ export interface Model {
   modes: string[]; // ["text","singleImage","multiReference"]
   pricing: { unit: string; price: number } | null;
   enabled: boolean;
+  cellSize: number; // 基础单元格尺寸（1024=1k, 2048=2k, 4096=4k）
 }
 
-/** 任务槽绑定 */
+/** 任务槽绑定（支持主/备用模型） */
 export interface TaskSlotBinding {
   slotKey: TaskSlot;
   modelId: string | null;
+  backupModelId: string | null; // 备用模型（主模型失败时 fallback）
   params: Record<string, unknown> | null;
 }
 

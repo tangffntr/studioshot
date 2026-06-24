@@ -41,10 +41,11 @@ export const CreateJobResponse = z.object({
 });
 export type CreateJobResponse = z.infer<typeof CreateJobResponse>;
 
-/** POST /api/models/task-slots — 绑定模型到任务槽 */
+/** POST /api/models/task-slots — 绑定模型到任务槽（支持备用模型） */
 export const BindTaskSlotRequest = z.object({
   slotKey: z.string(),
   modelId: z.string(),
+  backupModelId: z.string().optional(),
   params: z.record(z.string(), z.unknown()).optional(),
 });
 export type BindTaskSlotRequest = z.infer<typeof BindTaskSlotRequest>;

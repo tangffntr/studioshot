@@ -1,16 +1,15 @@
-/** web/src/views/AssetsView.tsx — 资产库（全部任务产出，不依赖 productId） */
+/** web/src/views/AssetsView.tsx — 资产库（图片 + 视频 + 点击放大） */
 import { createSignal, For, Show, onMount } from "solid-js";
 
 export default function AssetsView() {
   const [media, setMedia] = createSignal<Array<any>>([]);
   const [confirmDel, setConfirmDel] = createSignal<string | null>(null);
+  const [lightboxUrl, setLightboxUrl] = createSignal<string | null>(null);
 
   const loadMedia = async () => {
-    // 查全量 media，按创建时间倒序
     const all = await fetch("/api/media").then((r) => r.json());
-    // 排除素材库来源（sourceMediaId 非空 = 从资产转存的，不是任务产出）
-    // 且只显示 image 类型
-    const assets = all.filter((m: any) => m.type === "image" && !m.sourceMediaId);
+    // 显示图片和视频类型，排除素材库来源
+    const assets = all.filter((m: any) => (m.type === "image" || m.type === "video") && !m.sourceMediaId);
     setMedia(assets);
   };
 
@@ -33,15 +32,31 @@ export default function AssetsView() {
   return (
     <div class="view-page">
       <h1 class="font-display">资产库</h1>
-      <span class="hint" style={{ "margin-bottom": "20px", display: "block" }}>{media().length} 项 · 显示所有任务产出的图片</span>
+      <span class="hint" style={{ "margin-bottom": "20px", display: "block" }}>{media().length} 项 · 显示所有任务产出的图片和视频</span>
       <Show when={media().length === 0} fallback={
         <div class="media-grid">
           <For each={media()}>{(m) => (
             <div class="media-card">
-              <img src={m.url} alt="" />
+              {/* 视频用 video 标签，图片用 img 标签 */}
+              <Show when={m.type === "video"} fallback={
+                <img src={m.url} alt="" onClick={() => setLightboxUrl(m.url)} style={{ cursor: "zoom-in" }} />
+              }>
+                <video
+                  src={m.url}
+                  muted
+                  loop
+                  playsinline
+                  preload="metadata"
+                  style={{ width: "100%", height: "140px", "object-fit": "cover", display: "block", background: "#000", cursor: "pointer" }}
+                  onMouseEnter={(e) => (e.target as HTMLVideoElement).play().catch(() => {})}
+                  onMouseLeave={(e) => { const v = e.target as HTMLVideoElement; v.pause(); v.currentTime = 0; }}
+                  onClick={() => setLightboxUrl(m.url)}
+                />
+                <span class="video-badge">▶ 视频</span>
+              </Show>
               <div class="media-meta">
                 <Show when={m.slotCode}><span class="slot-badge">{m.slotCode}</span></Show>
-                <Show when={m.sortOrder}><span class="hint">#{m.sortOrder}</span></Show>
+                <Show when={m.duration}><span class="hint">{m.duration}s</span></Show>
               </div>
               <Show when={m.promptText}>
                 <div class="hint" style={{ padding: "0 10px", "max-height": "36px", overflow: "hidden", "font-size": "10px" }}>{m.promptText?.slice(0, 80)}</div>
@@ -60,7 +75,26 @@ export default function AssetsView() {
           )}</For>
         </div>
       }>
-        <div class="hint">暂无任务产出。完成出图任务后，生成的图片会出现在这里。</div>
+        <div class="hint">暂无任务产出。完成出图任务后，生成的图片和视频会出现在这里。</div>
+      </Show>
+
+      {/* 放大查看弹窗（图片 + 视频） */}
+      <Show when={lightboxUrl()}>
+        <div class="lightbox" onClick={() => setLightboxUrl(null)}>
+          <Show when={lightboxUrl()!.endsWith(".mp4") || lightboxUrl()!.includes("/video/")} fallback={
+            <img src={lightboxUrl()!} class="lightbox-img" alt="" />
+          }>
+            <video
+              src={lightboxUrl()!}
+              controls
+              autoplay
+              loop
+              style={{ "max-width": "90vw", "max-height": "85vh", "border-radius": "8px" }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </Show>
+          <div class="lightbox-hint">点击任意处关闭</div>
+        </div>
       </Show>
     </div>
   );

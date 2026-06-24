@@ -11,6 +11,8 @@ export interface GenImageRequest {
   /** 参考图 base64 数组（图生图保真；空=纯文生图） */
   referenceImages?: string[];
   size?: string; // "1024x1024"
+  /** 网格大小（用于套图优化，一次生成多张图） */
+  gridSize?: "1x1" | "1x2" | "2x1" | "2x2" | "2x3" | "3x2" | "3x3";
 }
 
 /** 图片生成结果 */

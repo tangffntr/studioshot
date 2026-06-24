@@ -1,17 +1,30 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { resolveSlot } from "./task-slots";
-import { getDb, getRaw, initSchema } from "../db/client";
+import { getDb, getRaw, initSchema, __resetDbForTests } from "../db/client";
 import { vendors, vendorCredentials, models, taskSlots } from "../db/schema";
 import { encryptCredentials } from "./credentials";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
-beforeAll(() => initSchema());
+// ⚠️ 测试隔离：重定向到独立的测试库，绝不污染生产库 data/app.sqlite。
+// 必须在首次连接 client 前设置 DB_PATH。
+const TMP_DIR = path.resolve(process.cwd(), "data/test-tmp");
+const TEST_DB = path.join(TMP_DIR, "test-taskslots.sqlite");
+fs.mkdirSync(TMP_DIR, { recursive: true });
+if (fs.existsSync(TEST_DB)) fs.rmSync(TEST_DB, { force: true });
+process.env.DB_PATH = TEST_DB;
+
+beforeAll(() => {
+  __resetDbForTests();
+  initSchema();
+});
 
 beforeEach(() => {
   const raw = getRaw();
   for (const t of ["products", "media", "jobs", "api_calls", "vendors", "vendor_credentials", "models", "task_slots"]) {
     raw.exec(`DELETE FROM ${t}`);
   }
-  // seed: grsai 供应商 + 凭证 + 模型 + 任务槽
+  // seed: grsai 供应商 + 凭证 + 模型 + 任务槽（仅影响测试库）
   const db = getDb();
   db.insert(vendors).values({
     id: "grsai", name: "Grsai", category: "image", adapter: "grsai",

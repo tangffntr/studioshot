@@ -88,19 +88,39 @@ export async function runJob(jobId: string): Promise<void> {
     return;
   }
 
-  // 原 Agent 模式（单图）
+  // 原 Agent 模式（单图）或续接模式
   db.update(jobs).set({ status: "running", startedAt: Date.now() }).where(eq(jobs.id, jobId)).run();
   try {
     const initialMediaIds: string[] = payload.attachments || [];
+    // 续接模式使用 continuationInstruction，否则使用原 instruction
+    const instruction = payload.continuationInstruction || job.instruction;
+    const isContinuation = !!payload.continuationInstruction;
+
     const result = await runAgentLoop({
       jobId,
       productId: job.productId,
-      instruction: job.instruction,
+      instruction,
       initialMediaIds,
+      previousMessages: payload.previousMessages || undefined,
+      lastGeneratedMediaId: payload.lastGeneratedMediaId || null,
     });
+
+    // 续接时保留之前的 mediaIds，追加新的
+    let allMediaIds = result.mediaIds;
+    if (isContinuation && job.result) {
+      try {
+        const prevResult = JSON.parse(job.result);
+        allMediaIds = [...(prevResult.mediaIds || []), ...result.mediaIds];
+      } catch {}
+    }
+
     db.update(jobs).set({
       status: "done", progress: 100,
-      result: JSON.stringify({ mediaIds: result.mediaIds, text: result.finalText }),
+      result: JSON.stringify({
+        mediaIds: allMediaIds, // ⭐ 包含所有历史 mediaIds
+        text: result.finalText,
+        conversationHistory: result.conversationHistory, // ⭐ 存储完整对话历史
+      }),
       finishedAt: Date.now(),
     }).where(eq(jobs.id, jobId)).run();
     eventBus.publish({ type: "job.completed", jobId, resultMediaIds: result.mediaIds });

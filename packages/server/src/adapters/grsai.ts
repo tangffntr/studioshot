@@ -24,6 +24,9 @@ export class GrsaiAdapter implements VendorAdapter {
     // 构造请求体（图生图传 images 数组）
     const images = (req.referenceImages || []).map((b64) => (b64.startsWith("data:") ? b64 : `data:image/png;base64,${b64}`));
 
+    // 直接使用传入的 size（pipeline 已根据 cellSize + gridSize 计算好最终尺寸）
+    const aspectRatio = req.size || "1024x1024";
+
     const res = await withRetry(() => fetch(`${host}/v1/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
@@ -31,7 +34,7 @@ export class GrsaiAdapter implements VendorAdapter {
         model: req.model,
         prompt: req.prompt,
         images,
-        aspectRatio: req.size || "1024x1024",
+        aspectRatio,
         replyType: "json",
       }),
     }));

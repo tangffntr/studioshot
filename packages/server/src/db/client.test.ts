@@ -1,28 +1,31 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { eq } from "drizzle-orm";
-import { getDb, getRaw, initSchema } from "./client";
+import { getDb, getRaw, initSchema, __resetDbForTests } from "./client";
 import { products, media, jobs, apiCalls, vendors, vendorCredentials, models, taskSlots, templates, templateSlots, platformSpecs } from "./schema";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-// 用临时 DB 避免污染（每个测试文件独立 db 文件）
+// ⚠️ 测试隔离：重定向到独立的测试库文件，绝不污染生产库 data/app.sqlite。
+// 在加载 client 之前设置 DB_PATH（client.test.ts 是首个 import client 的测试）。
 const TMP_DIR = path.resolve(process.cwd(), "data/test-tmp");
+const TEST_DB = path.join(TMP_DIR, "test.sqlite");
+// 清掉上一次的测试库，确保干净起点
+fs.mkdirSync(TMP_DIR, { recursive: true });
+if (fs.existsSync(TEST_DB)) fs.rmSync(TEST_DB, { force: true });
+process.env.DB_PATH = TEST_DB;
+
 beforeAll(() => {
-  fs.mkdirSync(TMP_DIR, { recursive: true });
+  // 重置单例 + 在测试库上建表
+  __resetDbForTests();
+  initSchema();
 });
 
-// 重置单例 + 用临时 db
+// 每个测试前清空测试库的表（仅影响 TEST_DB，与生产库无关）
 beforeEach(() => {
-  // 直接用内存表测：关闭后重开到临时文件
   const raw = getRaw();
-  // 清空所有表（幂等测试）
   for (const t of ["products", "media", "jobs", "api_calls", "vendors", "vendor_credentials", "models", "task_slots", "templates", "template_slots", "platform_specs"]) {
     raw.exec(`DELETE FROM ${t}`);
   }
-});
-
-beforeAll(() => {
-  initSchema();
 });
 
 describe("db schema CRUD", () => {

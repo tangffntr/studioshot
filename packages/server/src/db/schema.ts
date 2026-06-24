@@ -98,12 +98,14 @@ export const models = sqliteTable("models", {
   modes: text("modes"), // JSON
   pricing: text("pricing"), // JSON
   enabled: integer("enabled").notNull().default(1),
+  cellSize: integer("cell_size").notNull().default(1024), // 基础单元格尺寸（1024=1k, 2048=2k, 4096=4k）
 });
 
-/** 任务槽（模型绑定） */
+/** 任务槽（模型绑定，支持主/备用模型） */
 export const taskSlots = sqliteTable("task_slots", {
   slotKey: text("slot_key").primaryKey(),
   modelId: text("model_id"),
+  backupModelId: text("backup_model_id"), // 备用模型（主模型失败时 fallback）
   params: text("params"), // JSON
 });
 

@@ -1,11 +1,23 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { getDb, getRaw, initSchema } from "./client";
+import { getDb, getRaw, initSchema, __resetDbForTests } from "./client";
 import { templates, templateSlots, platformSpecs, taskSlots } from "./schema";
 import { eq } from "drizzle-orm";
 import { seedDefaults } from "./seed";
+import * as fs from "node:fs";
+import * as path from "node:path";
+
+// ⚠️ 测试隔离：重定向到独立的测试库，绝不污染生产库 data/app.sqlite。
+// 必须在 import client 产生的首次连接前设置 DB_PATH。
+const TMP_DIR = path.resolve(process.cwd(), "data/test-tmp");
+const TEST_DB = path.join(TMP_DIR, "test-seed.sqlite");
+fs.mkdirSync(TMP_DIR, { recursive: true });
+if (fs.existsSync(TEST_DB)) fs.rmSync(TEST_DB, { force: true });
+process.env.DB_PATH = TEST_DB;
 
 beforeAll(() => {
+  __resetDbForTests();
   initSchema();
+  seedDefaults();
 });
 
 describe("seed 内置模板", () => {

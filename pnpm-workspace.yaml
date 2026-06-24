@@ -2,8 +2,8 @@ packages:
   - 'packages/*'
 
 allowBuilds:
-  better-sqlite3: set this to true or false
-  esbuild: set this to true or false
+  better-sqlite3: true
+  esbuild: true
 
 # 允许执行构建脚本的原生依赖（pnpm 11+ 安全策略）
 # 注：本环境 pnpm 11.1.3 的 onlyBuiltDependencies 自动批准不生效，

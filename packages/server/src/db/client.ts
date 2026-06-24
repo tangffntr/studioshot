@@ -13,8 +13,12 @@ export type DB = BetterSQLite3Database<typeof schema>;
 let _db: DB | null = null;
 let _raw: Database.Database | null = null;
 
-/** DB 文件路径（data/ 下） */
+/** DB 文件路径（data/ 下）
+ *  生产环境用 data/app.sqlite；测试可通过 DB_PATH 环境变量重定向到独立库，避免污染生产数据。
+ */
 function dbPath(): string {
+  const override = process.env.DB_PATH;
+  if (override) return override;
   const dir = path.resolve(process.cwd(), "data");
   fs.mkdirSync(dir, { recursive: true });
   return path.join(dir, "app.sqlite");
@@ -37,6 +41,15 @@ export function getDb(): DB {
 export function getRaw(): Database.Database {
   if (!_raw) getDb();
   return _raw!;
+}
+
+/** 关闭并重置 DB 单例（仅供测试隔离使用：切换到不同的 DB 文件）。
+ *  生产代码请勿调用。
+ */
+export function __resetDbForTests(): void {
+  try { _raw?.close(); } catch { /* 忽略关闭错误 */ }
+  _db = null;
+  _raw = null;
 }
 
 /** 建表（幂等，启动时调用） */
@@ -113,6 +126,10 @@ export function initSchema(): void {
   migrateAddColumn("media", "slot_code", "TEXT");
   migrateAddColumn("media", "sort_order", "INTEGER");
   migrateAddColumn("media", "job_id", "TEXT");
+  // task_slots 表加列（备用模型支持）
+  migrateAddColumn("task_slots", "backup_model_id", "TEXT");
+  // models 表加列（基础单元格尺寸）
+  migrateAddColumn("models", "cell_size", "INTEGER");
   // job_id 列加完后再建索引
   try { getRaw().exec("CREATE INDEX IF NOT EXISTS idx_media_job ON media(job_id)"); } catch {}
 }

@@ -10,10 +10,26 @@ import { toggleTheme } from "./context/theme";
 export function AppLayout(props: { children?: any }) {
   const [collapsed, setCollapsed] = createSignal(false);
   const navigate = useNavigate();
+  const [confirmDelete, setConfirmDelete] = createSignal<string | null>(null);
 
   onMount(() => { connectSSE(); loadJobs(); setInterval(loadJobs, 10000); });
 
   const openJob = async (jobId: string) => { await loadJobConversation(jobId); navigate("/"); };
+
+  const deleteJob = async (jobId: string) => {
+    try {
+      await fetch(`/api/jobs/${jobId}`, { method: "DELETE" });
+      setConfirmDelete(null);
+      await loadJobs(); // 重新加载任务列表
+    } catch (e) {
+      console.error("删除任务失败", e);
+    }
+  };
+
+  const handleNewConversation = () => {
+    newConversation();
+    navigate("/");
+  };
 
   return (
     <div class="app-layout">
@@ -22,32 +38,54 @@ export function AppLayout(props: { children?: any }) {
         <div class="sidebar-header">
           <div class="sidebar-logo">Studio<span class="dot">.</span>Shot</div>
         </div>
-        <button class="new-chat-btn" onClick={() => { newConversation(); window.location.hash = "#/"; }}>
-          + 新建出图
+        <button class="new-chat-btn" onClick={handleNewConversation}>
+          + 新建对话
         </button>
         <nav class="nav-list">
           <A href="/" class="nav-item" activeClass="active" end>
-            <span class="nav-icon">✦</span> 聊天
+            <span class="nav-icon">💬</span> 聊天
           </A>
           <A href="/history" class="nav-item" activeClass="active">
-            <span class="nav-icon">◷</span> 历史记录
+            <span class="nav-icon">📋</span> 历史记录
           </A>
           <A href="/materials" class="nav-item" activeClass="active">
-            <span class="nav-icon">▦</span> 素材库
+            <span class="nav-icon">⭐</span> 素材库
           </A>
           <A href="/assets" class="nav-item" activeClass="active">
-            <span class="nav-icon">▣</span> 资产库
+            <span class="nav-icon">🖼️</span> 资产库
+          </A>
+          <A href="/canvas" class="nav-item" activeClass="active">
+            <span class="nav-icon">🎨</span> 画布
           </A>
           <A href="/settings" class="nav-item" activeClass="active">
-            <span class="nav-icon">⚙</span> 模型设置
+            <span class="nav-icon">⚙️</span> 模型设置
           </A>
 
           <div class="nav-section-label">最近任务</div>
           <For each={state.jobs.slice(0, 12)}>
             {(job: JobSummary) => (
-              <div class="history-item" title={job.instruction} onClick={() => openJob(job.id)}>
-                {job.instruction.slice(0, 26)}
-                <span class="h-status">· {job.status}</span>
+              <div class="history-item" title={job.instruction}>
+                <div class="history-item-content" onClick={() => openJob(job.id)}>
+                  {job.instruction.slice(0, 26)}
+                  <span class="h-status">· {job.status}</span>
+                </div>
+                <Show when={confirmDelete() === job.id} fallback={
+                  <button
+                    class="history-item-delete"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmDelete(job.id);
+                    }}
+                    title="删除任务"
+                  >
+                    ✕
+                  </button>
+                }>
+                  <div class="history-item-confirm" onClick={(e) => e.stopPropagation()}>
+                    <button class="confirm-yes" onClick={() => deleteJob(job.id)}>✓</button>
+                    <button class="confirm-no" onClick={() => setConfirmDelete(null)}>✕</button>
+                  </div>
+                </Show>
               </div>
             )}
           </For>
@@ -102,7 +140,11 @@ function OutputPanel() {
       </Show>
       <Show when={lightboxUrl()}>
         <div class="lightbox" onClick={() => setLightboxUrl(null)}>
-          <img src={lightboxUrl()!} class="lightbox-img" alt="" />
+          <Show when={lightboxUrl()!.endsWith(".mp4") || lightboxUrl()!.includes("/video/")} fallback={
+            <img src={lightboxUrl()!} class="lightbox-img" alt="" />
+          }>
+            <video src={lightboxUrl()!} controls autoplay loop style={{ "max-width": "90vw", "max-height": "85vh", "border-radius": "8px" }} onClick={(e) => e.stopPropagation()} />
+          </Show>
           <div class="lightbox-hint">点击任意处关闭</div>
         </div>
       </Show>
@@ -114,6 +156,7 @@ function OutputCard(props: { media: any; index: number; onZoom: (url: string) =>
   const [editing, setEditing] = createSignal(false);
   const [draft, setDraft] = createSignal(props.media.promptText || "");
   const [regenerating, setRegenerating] = createSignal(false);
+  const isVideo = () => props.media.url?.endsWith(".mp4") || props.media.url?.includes("/video/");
 
   const save = async () => {
     await fetch(`/api/media/${props.media.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ promptText: draft() }) });
@@ -121,21 +164,17 @@ function OutputCard(props: { media: any; index: number; onZoom: (url: string) =>
     setState("outputMedia", props.index, "promptText", draft());
   };
 
-  // 重生成：用（修改后的）prompt 提交新 agent job
   const regenerate = async () => {
     const prompt = editing() ? draft() : (props.media.promptText || "");
     setRegenerating(true);
     try {
-      // 先保存修改的 prompt
       if (editing()) await save();
-      // 提交新 job（纯文本出图，无产品图，用 prompt 直接生成）
       const job = await fetch("/api/jobs", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instruction: prompt, mode: "agent" }),
       }).then((r) => r.json());
       setState("currentJobId", job.jobId);
       setState("jobStatus", "queued");
-      // 添加系统消息提示重生成
       setState("messages", (m) => [...m, { id: crypto.randomUUID(), role: "system" as const, text: `🔄 重生成中：${prompt.slice(0, 40)}...`, ts: Date.now() }]);
     } catch (e: any) {
       console.error("重生成失败", e);
@@ -146,10 +185,16 @@ function OutputCard(props: { media: any; index: number; onZoom: (url: string) =>
 
   return (
     <div class="output-card">
-      <div style={{ position: "relative" }}>
-        <img src={props.media.url} class="output-card-img" alt="" />
-        <button class="zoom-overlay" onClick={() => props.onZoom(props.media.url)} title="放大查看">🔍</button>
-      </div>
+      <Show when={isVideo()} fallback={
+        <img src={props.media.url} class="output-card-img" alt="" onClick={() => props.onZoom(props.media.url)} />
+      }>
+        <video src={props.media.url} class="output-card-img" muted loop playsinline preload="metadata"
+          onMouseEnter={(e) => (e.target as HTMLVideoElement).play().catch(() => {})}
+          onMouseLeave={(e) => { const v = e.target as HTMLVideoElement; v.pause(); v.currentTime = 0; }}
+          onClick={() => props.onZoom(props.media.url)}
+        />
+        <span class="video-badge" style={{ position: "absolute", top: "6px", right: "6px" }}>▶ 视频</span>
+      </Show>
       <Show when={props.media.slotCode}><span class="slot-badge">{props.media.slotCode}</span></Show>
       <Show when={editing()} fallback={
         <div class="output-prompt" onClick={() => { setDraft(props.media.promptText || ""); setEditing(true); }}>

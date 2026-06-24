@@ -79,11 +79,44 @@ export const oss = {
     return `${URL_PREFIX}/${thumbRel.split(path.sep).join("/")}/${thumbName}`;
   },
 
-  /** 删除文件 */
-  async deleteFile(relPath: string): Promise<void> {
-    const abs = safeAbs(relPath);
-    await fs.unlink(abs).catch(() => {}); // 不存在则忽略
-  },
+/** 删除文件 */
+async deleteFile(relPath: string): Promise<void> {
+  const abs = safeAbs(relPath);
+  await fs.unlink(abs).catch(() => {}); // 不存在则忽略
+},
+
+/** 切割网格大图为单独图片 */
+async cutGridImage(
+  gridBase64: string,
+  gridSize: "1x1" | "1x2" | "2x1" | "2x2" | "2x3" | "3x2" | "3x3"
+): Promise<Array<{ base64: string; position: { row: number; col: number } }>> {
+  const [cols, rows] = gridSize.split("x").map(Number);
+  const gridBuffer = Buffer.from(stripDataUrl(gridBase64), "base64");
+  const metadata = await sharp(gridBuffer).metadata();
+  const cellWidth = Math.floor(metadata.width! / cols);
+  const cellHeight = Math.floor(metadata.height! / rows);
+
+  const results = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const cellBuffer = await sharp(gridBuffer)
+        .extract({
+          left: col * cellWidth,
+          top: row * cellHeight,
+          width: cellWidth,
+          height: cellHeight,
+        })
+        .png()
+        .toBuffer();
+
+      results.push({
+        base64: cellBuffer.toString("base64"),
+        position: { row, col },
+      });
+    }
+  }
+  return results;
+},
 
   /** 文件是否存在 */
   async exists(relPath: string): Promise<boolean> {

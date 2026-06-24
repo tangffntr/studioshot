@@ -23,7 +23,7 @@ function emit(type: EventType, payload: Record<string, unknown>) {
   eventBus.publish({ type, ...payload } as SseEvent);
 }
 
-const SWAP_PROMPT = "Replace the product in this scene with the provided product. Keep the exact same composition, camera angle, lighting, and background. Only swap the product subject.";
+const SWAP_PROMPT = "用提供的产品替换场景中的产品。保持完全相同的构图、拍摄角度、光线和背景，仅替换产品主体。";
 
 /** SKU 批量任务 */
 export async function runBatchSkuJob(jobId: string, productId: string | null, masterSceneMediaId: string, skuProductMediaIds: string[]): Promise<void> {

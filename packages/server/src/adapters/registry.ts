@@ -7,12 +7,16 @@ import { GrsaiAdapter } from "./grsai";
 import { OpenAIChatAdapter } from "./openai-chat";
 import { AliyunTryonAdapter } from "./aliyun-tryon";
 import { KlingVideoAdapter } from "./kling-video";
+import { AgnesImageAdapter } from "./agnes-image";
+import { AgnesVideoAdapter } from "./agnes-video";
 
 const registry: Record<string, VendorAdapter> = {
   grsai: new GrsaiAdapter(),
   "openai-chat": new OpenAIChatAdapter(),
   "aliyun-tryon": new AliyunTryonAdapter(),
   "kling-video": new KlingVideoAdapter(),
+  "agnes-image": new AgnesImageAdapter(),
+  "agnes-video": new AgnesVideoAdapter(),
 };
 
 export function getAdapter(vendorId: string): VendorAdapter {
