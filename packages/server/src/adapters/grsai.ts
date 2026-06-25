@@ -11,6 +11,22 @@
 import type { VendorAdapter, GenImageRequest, GenImageResult } from "./base";
 import { extractHost } from "./base";
 import { withRetry } from "../utils/retry";
+import sharp from "sharp";
+
+/**
+ * 压缩参考图：长边限制 1024px，输出 JPEG（质量 85），返回纯 base64（不含 data: 前缀）。
+ * 避免原图过大（如 1.8MB）导致 grsai "image upload failed"。
+ */
+async function compressImage(b64: string): Promise<string> {
+  // 去掉可能的 data: 前缀
+  const raw = b64.includes(",") ? b64.split(",")[1] : b64;
+  const buf = Buffer.from(raw, "base64");
+  const compressed = await sharp(buf)
+    .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+  return compressed.toString("base64");
+}
 
 export class GrsaiAdapter implements VendorAdapter {
   category = "image" as const;
@@ -22,7 +38,18 @@ export class GrsaiAdapter implements VendorAdapter {
     const host = extractHost(baseUrl);
 
     // 构造请求体（图生图传 images 数组）
-    const images = (req.referenceImages || []).map((b64) => (b64.startsWith("data:") ? b64 : `data:image/png;base64,${b64}`));
+    // 压缩参考图：长边限制 1024px + JPEG 85%，避免原图过大导致 grsai 上传失败
+    const rawImages = req.referenceImages || [];
+    const images: string[] = [];
+    for (const b64 of rawImages) {
+      try {
+        const compressed = await compressImage(b64);
+        images.push(compressed.startsWith("data:") ? compressed : `data:image/jpeg;base64,${compressed}`);
+      } catch {
+        // 压缩失败则用原图
+        images.push(b64.startsWith("data:") ? b64 : `data:image/png;base64,${b64}`);
+      }
+    }
 
     // 直接使用传入的 size（pipeline 已根据 cellSize + gridSize 计算好最终尺寸）
     const aspectRatio = req.size || "1024x1024";

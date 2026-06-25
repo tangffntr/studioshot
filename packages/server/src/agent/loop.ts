@@ -233,6 +233,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResul
             ...imageParts,
           ],
         });
+        console.log(`[agent] job=${opts.jobId.slice(0,8)} 多模态输入: ${imageParts.length} 张参考图`);
       } else {
         // 图片全部读取失败，退化为纯文本（保留 id 供 LLM 决策）
         messages.push({
@@ -285,6 +286,11 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResul
     // 并发执行工具
     for (const tc of toolCalls) {
       const tool = toolMap.get(tc.toolName);
+      // 运维日志：记录生图的参考图数量
+      if (tc.toolName === "generate_image") {
+        const refs = (tc.args as any)?.referenceMediaIds || [];
+        console.log(`[agent] job=${opts.jobId.slice(0,8)} generate_image: ${refs.length} 个参考图, prompt="${String((tc.args as any)?.prompt||"").slice(0,50)}..."`);
+      }
       emit("tool.call" as EventType, { jobId: opts.jobId, toolName: tc.toolName, toolInput: tc.args });
       toolCallsLog.push(tc.toolName);
 
