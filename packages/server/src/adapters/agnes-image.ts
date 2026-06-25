@@ -19,6 +19,21 @@ export class AgnesImageAdapter implements VendorAdapter {
 
     const size = req.size || "1024x1024";
 
+    // 按官方文档：图生图用 extra_body.image 数组（支持 Data URI Base64），
+    // 图生图输出用 extra_body.response_format: "b64_json"；
+    // 文生图输出用 extra_body.response_format: "url"（默认）。
+    const refs = req.referenceImages || [];
+    const isImg2Img = refs.length > 0;
+
+    // 把参考图统一成 Data URI（data:image/png;base64,...）数组
+    const imageArray = refs.map((b64) => (b64.startsWith("data:") ? b64 : `data:image/png;base64,${b64}`));
+
+    const extraBody: Record<string, unknown> = {
+      // 图生图用 b64_json 输出（直接拿 base64），文生图用 url 输出
+      response_format: isImg2Img ? "b64_json" : "url",
+    };
+    if (isImg2Img) extraBody.image = imageArray;
+
     const res = await withRetry(() => fetch(`${baseUrl}/v1/images/generations`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
@@ -26,7 +41,7 @@ export class AgnesImageAdapter implements VendorAdapter {
         model: req.model || "agnes-image-2.1-flash",
         prompt: req.prompt,
         size,
-        extra_body: { response_format: "url" },
+        extra_body: extraBody,
       }),
     }));
 
@@ -56,7 +71,7 @@ export class AgnesImageAdapter implements VendorAdapter {
       base64,
       mime,
       cost: 10,
-      meta: { model: req.model || "agnes-image-2.1-flash", created: data?.created },
+      meta: { model: req.model || "agnes-image-2.1-flash", created: data?.created, img2img: isImg2Img },
     };
   }
 }
