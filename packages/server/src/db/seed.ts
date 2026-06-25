@@ -34,12 +34,11 @@ export function seedDefaults(): void {
     }).run();
   }
   function upsertSlot(slotKey: string, modelId: string) {
+    // 幂等：已存在则跳过（保留用户在设置页的配置）。
+    // 否则每次服务器启动都会把用户手动配置的槽位覆盖回默认值。
     const exists = db.select().from(taskSlots).where(eq(taskSlots.slotKey, slotKey)).all()[0];
-    if (exists) {
-      db.update(taskSlots).set({ modelId }).where(eq(taskSlots.slotKey, slotKey)).run();
-    } else {
-      db.insert(taskSlots).values({ slotKey, modelId, params: null }).run();
-    }
+    if (exists) return;
+    db.insert(taskSlots).values({ slotKey, modelId, params: null }).run();
   }
 
   const passwordInput = { key: "apiKey", label: "API Key", type: "password" as const, required: true };
