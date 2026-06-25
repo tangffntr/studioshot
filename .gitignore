@@ -57,9 +57,14 @@ nul
 /detail-flow/
 
 # 运行时 OSS 素材与临时图片（生成产物，不提交）
-packages/*/data/oss/materials/
+# 内置素材 builtin-mat-* 保留，其余运行时生成图忽略
+packages/*/data/oss/materials/*
+!packages/*/data/oss/materials/builtin-mat-*.png
 packages/*/data/oss/tmp/
 packages/*/data/oss/video/
+packages/*/data/oss/template/
+packages/*/data/oss/products/
+packages/*/data/oss/smallImage/
 packages/*/data/oss/[0-9a-f]/
 
 # 根目录临时测试脚本与产物（一次性验证用）
