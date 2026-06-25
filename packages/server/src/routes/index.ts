@@ -559,11 +559,13 @@ router.get("/api/products", (_req, res) => {
 router.get("/api/events", (_req, res) => {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
+    "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",
+    "X-Accel-Buffering": "no", // ⭐ 禁用 nginx/代理缓冲，确保事件即时送达（修 blueprint 确认 UI 不显示）
   });
-  // 心跳
-  const heartbeat = setInterval(() => res.write(": hb\n\n"), 15000);
+  res.flushHeaders(); // 立即发送响应头，避免 Vite 代理缓冲
+  // 心跳（5s，更激进保活，防代理层超时断连）
+  const heartbeat = setInterval(() => res.write(": hb\n\n"), 5000);
   const unsub = eventBus.subscribe((event: SseEvent) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   });

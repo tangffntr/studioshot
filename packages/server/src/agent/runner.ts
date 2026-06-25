@@ -90,6 +90,9 @@ export async function runJob(jobId: string): Promise<void> {
 
   // 原 Agent 模式（单图）或续接模式
   db.update(jobs).set({ status: "running", startedAt: Date.now() }).where(eq(jobs.id, jobId)).run();
+  // ⭐ 提前发 job.started：让前端立即从"排队中"翻为"思考中"。
+  // 不能等到 runAgentLoop 内部，因为进 loop 前有耗时操作（读参考图 base64）。
+  eventBus.publish({ type: "job.started", jobId });
   try {
     const initialMediaIds: string[] = payload.attachments || [];
     // 续接模式使用 continuationInstruction，否则使用原 instruction

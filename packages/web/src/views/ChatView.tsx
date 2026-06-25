@@ -5,6 +5,7 @@
 import { createSignal, Show, For, createEffect } from "solid-js";
 import { state, setState } from "../context/store";
 import type { ChatMessage } from "../context/store";
+import { TOOL_LABEL } from "../context/store";
 import BlueprintConfirm from "./BlueprintConfirm";
 
 const MODES = [
@@ -302,8 +303,11 @@ export default function ChatView() {
           {/* 任务进度指示器 */}
           <Show when={state.jobStatus === "running" || state.jobStatus === "queued"}>
             <div class="msg-row">
-              <div class="msg-avatar tl-agent">AI</div>
+              <div class="msg-avatar tl-agent" title="AI">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2a3 3 0 013 3v1h2a3 3 0 013 3v2.5a2 2 0 010 4V19a3 3 0 01-3 3H7a3 3 0 01-3-3v-3.5a2 2 0 010-4V9a3 3 0 013-3h2V5a3 3 0 013-3zm-2 11a1 1 0 100 2 1 1 0 000-2zm4 0a1 1 0 100 2 1 1 0 000-2z"/></svg>
+              </div>
               <div class="msg-content agent">
+                <ToolStepsPanel />
                 <div class="thinking-indicator">
                   <span class="thinking-dot">●</span>
                   <span class="thinking-dot">●</span>
@@ -434,16 +438,84 @@ export default function ChatView() {
   );
 }
 
+/** 工具调用步骤面板（可折叠）。展示当前任务的工具调用过程。 */
+function ToolStepsPanel() {
+  const [expanded, setExpanded] = createSignal(false);
+  const steps = () => state.toolSteps;
+  const hasSteps = () => steps().length > 0;
+  // 摘要：最后一步状态
+  const summary = () => {
+    const s = steps();
+    if (s.length === 0) return "";
+    const last = s[s.length - 1];
+    const label = TOOL_LABEL[last.toolName] || last.toolName;
+    if (last.status === "running") return `${label}…`;
+    if (last.status === "failed") return `${label} 失败`;
+    return `${label} ✓`;
+  };
+  const runningCount = () => steps().filter((s) => s.status === "running").length;
+  // 任务完成或无运行中步骤时自动折叠
+  createEffect(() => {
+    if (state.jobStatus === "done" && runningCount() === 0) setExpanded(false);
+  });
+
+  return (
+    <Show when={hasSteps()}>
+      <div class="tool-steps-panel">
+        <div class="tool-steps-header" onClick={() => setExpanded(!expanded())}>
+          <span class="tool-steps-toggle">{expanded() ? "▾" : "▸"}</span>
+          <span class="tool-steps-title">工具调用 · {steps().length} 步</span>
+          <span class="tool-steps-summary">{summary()}</span>
+        </div>
+        <Show when={expanded()}>
+          <div class="tool-steps-list">
+            <For each={steps()}>{(step, i) => (
+              <div class={`tool-step-item ${step.status}`}>
+                <span class="tool-step-idx">{i() + 1}</span>
+                <span class="tool-step-name">{TOOL_LABEL[step.toolName] || step.toolName}</span>
+                <Show when={step.input}><span class="tool-step-input">{step.input}</span></Show>
+                <span class="tool-step-status">
+                  {step.status === "running" ? "…" : step.status === "failed" ? "✗" : "✓"}
+                </span>
+              </div>
+            )}</For>
+          </div>
+        </Show>
+      </div>
+    </Show>
+  );
+}
+
 function MessageRow(props: { msg: ChatMessage }) {
   if (props.msg.role === "user") {
-    return <div class="msg-user"><div class="bubble">{props.msg.text}</div></div>;
+    return (
+      <div class="msg-user">
+        <div class="bubble">{props.msg.text}</div>
+        <div class="msg-avatar tl-user" title="你">
+          {/* 用户头像：人物 SVG 图标 */}
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-5 0-9 2.5-9 6v2h18v-2c0-3.5-4-6-9-6z"/></svg>
+        </div>
+      </div>
+    );
   }
   const cls = () => ({ user: "tl-system", agent: "tl-agent", tool: "tl-tool", media: "tl-media", system: "tl-system" }[props.msg.role] || "tl-system");
-  const icon = () => ({ user: "你", agent: "AI", tool: "⚙", media: "◉", system: "·" }[props.msg.role] || "·");
   const isVideo = () => props.msg.mediaType === "video" || props.msg.mediaUrl?.endsWith(".mp4");
+  // 头像图标（按角色）
+  const avatarIcon = () => {
+    if (props.msg.role === "agent") {
+      return <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2a3 3 0 013 3v1h2a3 3 0 013 3v2.5a2 2 0 010 4V19a3 3 0 01-3 3H7a3 3 0 01-3-3v-3.5a2 2 0 010-4V9a3 3 0 013-3h2V5a3 3 0 013-3zm-2 11a1 1 0 100 2 1 1 0 000-2zm4 0a1 1 0 100 2 1 1 0 000-2z"/></svg>;
+    }
+    if (props.msg.role === "tool") {
+      return <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 8a4 4 0 014 4l2.5-1.5 1 1.7L17 14l2.5 1.8-1 1.7L16 16a4 4 0 01-8 0l-2.5 1.5-1-1.7L7 14l-2.5-1.8 1-1.7L8 12a4 4 0 014-4zm0 2a2 2 0 100 4 2 2 0 000-4z"/></svg>;
+    }
+    if (props.msg.role === "media") {
+      return <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M21 5a2 2 0 012 2v10a2 2 0 01-2 2H3a2 2 0 01-2-2V7a2 2 0 012-2h18zm-4 4l-4 4-3-3-4 5h14l-3-6z"/></svg>;
+    }
+    return <span>·</span>; // system
+  };
   return (
     <div class="msg-row">
-      <div class={`msg-avatar ${cls()}`}>{icon()}</div>
+      <div class={`msg-avatar ${cls()}`}>{avatarIcon()}</div>
       <div class={`msg-content ${props.msg.role === "agent" ? "agent" : ""}`}>
         {props.msg.text}
         <Show when={props.msg.mediaUrl}>

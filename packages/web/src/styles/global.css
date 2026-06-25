@@ -713,6 +713,8 @@ select.field { appearance: none; background-image: url("data:image/svg+xml,%3Csv
 .msg-user {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
   margin-bottom: 20px;
 }
 .msg-user .bubble {
@@ -721,6 +723,10 @@ select.field { appearance: none; background-image: url("data:image/svg+xml,%3Csv
   border-radius: 14px 14px 4px 14px;
   max-width: 80%;
   font-size: 14px;
+}
+/* 用户头像（右侧） */
+.msg-user .msg-avatar {
+  flex-shrink: 0;
 }
 .msg-row {
   display: flex;
@@ -738,6 +744,64 @@ select.field { appearance: none; background-image: url("data:image/svg+xml,%3Csv
   font-size: 11px;
   font-family: "JetBrains Mono", monospace;
   font-weight: 700;
+  flex-shrink: 0;
+}
+.msg-avatar svg { display: block; }
+/* 用户头像配色（青绿） */
+.tl-user { background: rgba(74, 222, 128, 0.15); color: var(--success); }
+
+/* 工具调用步骤面板（可折叠） */
+.tool-steps-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  font-size: 12px;
+}
+.tool-steps-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.tool-steps-header:hover { background: rgba(255, 255, 255, 0.03); }
+.tool-steps-toggle { color: var(--hint); width: 12px; }
+.tool-steps-title { color: var(--tool); font-weight: 600; }
+.tool-steps-summary { color: var(--hint); margin-left: auto; }
+.tool-steps-list {
+  padding: 4px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tool-step-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  color: var(--hint);
+}
+.tool-step-idx {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(192, 132, 252, 0.15);
+  color: var(--tool);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.tool-step-name { color: var(--fg); font-weight: 500; }
+.tool-step-input { color: var(--hint); font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-step-status { width: 14px; text-align: center; }
+.tool-step-item.done .tool-step-status { color: var(--success); }
+.tool-step-item.failed .tool-step-status { color: #f87171; }
+.tool-step-item.running .tool-step-status { color: var(--tool); animation: thinking-pulse 1s infinite; }
   flex-shrink: 0;
 }
 .msg-content { flex: 1; padding-top: 3px; }

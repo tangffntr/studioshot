@@ -246,7 +246,7 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResul
     }
   }
 
-  emit("job.started" as EventType, { jobId: opts.jobId });
+  // job.started 已在 runner.ts 入口处提前发送（避免进 loop 前的耗时让前端卡"排队中"）
 
   let steps = 0;
   const toolCallsLog: string[] = [];
@@ -255,7 +255,9 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResul
   while (steps < MAX_STEPS) {
     steps++;
     console.log(`[agent] job=${opts.jobId.slice(0,8)} step=${steps}`);
-    emit("job.progress" as EventType, { jobId: opts.jobId, progress: Math.min((steps / MAX_STEPS) * 90, 90), message: `Agent 思考中（第${steps}步）` });
+    // 思考心跳：progress 用 0，前端显示"思考中..."而非"生成中N%"
+    // message 仅作 system 提示，不改变 jobProgress 数值
+    emit("job.progress" as EventType, { jobId: opts.jobId, progress: 0, message: `Agent 思考中（第${steps}步）` });
 
     // 原生调主 LLM（支持 tools + tool_choice:auto）
     const { text: assistantText, toolCalls } = await callLLM(cfg, messages, openaiTools);
@@ -302,6 +304,12 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResul
           mediaIds.push((output as any).mediaId);
           emit("media.completed" as EventType, { jobId: opts.jobId, mediaId: (output as any).mediaId });
         }
+        // ⭐ 成功也发 tool.result，让前端工具步骤能标记"完成"
+        // （之前只失败发，导致 analyze_product/check_quality 步骤一直卡"调用中"）
+        const resultSummary = (output && typeof output === "object")
+          ? ("mediaId" in (output as any) ? { mediaId: (output as any).mediaId } : { ok: true })
+          : { text: String(output).slice(0, 100) };
+        emit("tool.result" as EventType, { jobId: opts.jobId, toolName: tc.toolName, toolResult: resultSummary });
       } catch (e: any) {
         const errMsg = e?.message || String(e);
         console.error(`[agent] 工具 ${tc.toolName} 出错:`, errMsg);

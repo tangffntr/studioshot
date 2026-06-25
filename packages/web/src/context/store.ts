@@ -3,7 +3,6 @@
  * 聊天消息流 + jobs 历史列表 + SSE 归约 + 页面规划确认
  */
 import { createStore } from "solid-js/store";
-import type { SseEvent } from "@ecom/shared";
 import type { PageBlueprint, VisualSamplePackage } from "@ecom/shared";
 
 export interface ChatMessage {
@@ -16,6 +15,16 @@ export interface ChatMessage {
   mediaType?: "image" | "video"; // ⭐ 媒体类型
   slotCode?: string;
   promptText?: string; // ⭐ 该图生成时的 prompt（产出栏/消息流展示+编辑）
+  ts: number;
+}
+
+/** 工具调用步骤（聚合展示，替代零散的 tool 消息） */
+export interface ToolStep {
+  id: string;
+  toolName: string;
+  status: "running" | "done" | "failed";
+  input?: string; // 参数摘要
+  result?: string; // 结果摘要
   ts: number;
 }
 
@@ -55,6 +64,7 @@ interface AppState {
   jobStatus: string | null;
   jobProgress: number;
   messages: ChatMessage[];
+  toolSteps: ToolStep[]; // ⭐ 当前任务的工具调用步骤（聚合展示）
   outputMedia: OutputMedia[]; // ⭐ 当前 job 产出（右侧栏）
   jobs: JobSummary[];
   connected: boolean;
@@ -77,6 +87,7 @@ const [state, setState] = createStore<AppState>({
   jobStatus: null,
   jobProgress: 0,
   messages: [],
+  toolSteps: [],
   outputMedia: [],
   jobs: [],
   connected: false,
@@ -97,7 +108,7 @@ export function connectSSE() {
   evtSource = new EventSource("/api/events");
   evtSource.onopen = () => setState("connected", true);
   evtSource.onerror = () => { setState("connected", false); setTimeout(() => connectSSE(), 3000); };
-  evtSource.onmessage = (e) => { try { handleEvent(JSON.parse(e.data)); } catch {} };
+  evtSource.onmessage = (e) => { try { handleEvent(JSON.parse(e.data)); } catch (err) { console.error("[SSE] 事件处理失败:", err, e.data); } };
 }
 
 /** 加载历史 job 列表 */
@@ -310,13 +321,36 @@ export function updateCanvasItemPrompt(id: string, promptText: string) {
   setState("canvasItems", (item) => item.id === id, { promptText });
 }
 
+/** 工具名中文映射（让用户看懂工具步骤） */
+export const TOOL_LABEL: Record<string, string> = {
+  analyze_product: "分析产品",
+  generate_image: "生成图片",
+  check_quality: "质量检查",
+};
+
+/** 工具参数摘要（取关键信息展示） */
+function toolInputSummary(toolName: string, input: any): string {
+  try {
+    if (toolName === "generate_image") {
+      const refs = input?.referenceMediaIds?.length || 0;
+      const prompt = String(input?.prompt || "").slice(0, 30);
+      return refs > 0 ? `图生图(${refs}参考) · ${prompt}…` : `文生图 · ${prompt}…`;
+    }
+    if (toolName === "analyze_product") return `产品图 ${String(input?.mediaId || "").slice(0, 8)}…`;
+    if (toolName === "check_quality") return `图 ${String(input?.mediaId || "").slice(0, 8)}…`;
+  } catch {}
+  return "";
+}
+
 function push(msg: ChatMessage) { setState("messages", (m) => [...m, msg]); }
 
-function handleEvent(evt: SseEvent) {
+// evt 用 any：blueprint.ready/visual_sample.ready 是运行时存在但 SseEvent 类型未声明的事件
+function handleEvent(evt: any) {
   if (state.currentJobId && evt.jobId && evt.jobId !== state.currentJobId) return;
   switch (evt.type) {
     case "job.started":
       setState("jobStatus", "running");
+      setState("toolSteps", []); // 新任务重置工具步骤
       // 续接模式时添加分隔线
       if (state.isContinuation) {
         push({ id: crypto.randomUUID(), role: "system", text: "─── 续接对话 ───", ts: Date.now() });
@@ -331,12 +365,35 @@ function handleEvent(evt: SseEvent) {
     case "agent.message":
       if (evt.text) push({ id: crypto.randomUUID(), role: "agent", text: evt.text, ts: Date.now() });
       break;
-    case "tool.call":
-      push({ id: crypto.randomUUID(), role: "tool", toolName: evt.toolName, text: `调用 ${evt.toolName}`, ts: Date.now() });
+    case "tool.call": {
+      // 聚合到 toolSteps（不再作为零散消息 push）
+      const toolName = evt.toolName || "";
+      const step: ToolStep = {
+        id: crypto.randomUUID(),
+        toolName,
+        status: "running",
+        input: toolInputSummary(toolName, (evt as any).toolInput),
+        ts: Date.now(),
+      };
+      setState("toolSteps", (s) => [...s, step]);
       break;
-    case "tool.result":
-      push({ id: crypto.randomUUID(), role: "tool", toolName: evt.toolName, text: `${evt.toolName} 完成`, ts: Date.now() });
+    }
+    case "tool.result": {
+      // 标记对应工具步骤完成/失败（匹配最后一个同名 running 步骤）
+      const toolName = evt.toolName || "";
+      const isFail = !!((evt as any).toolResult?.error);
+      setState("toolSteps", (steps) => {
+        const arr = [...steps];
+        for (let i = arr.length - 1; i >= 0; i--) {
+          if (arr[i].toolName === toolName && arr[i].status === "running") {
+            arr[i] = { ...arr[i], status: isFail ? "failed" : "done", result: isFail ? (evt as any).toolResult?.error : "完成" };
+            break;
+          }
+        }
+        return arr;
+      });
       break;
+    }
     case "media.completed":
       if (evt.mediaId) {
         fetch(`/api/media/${evt.mediaId}`).then((r) => r.json()).then((m: any) => {
