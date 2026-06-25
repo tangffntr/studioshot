@@ -105,11 +105,21 @@ export class AgnesVideoAdapter implements VendorAdapter {
       submitBody.extra_body = { image: imageUrls };
     }
 
-    const submitRes = await withRetry(() => fetch(`${baseUrl}/v1/videos`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify(submitBody),
-    }));
+    // ⚠️ agnes 视频提交接口响应较慢（实测约 100s，需等任务真正入队），
+    // 故提交 fetch 设 150s 超时，避免被 Node 默认超时切断导致误判"挂起"。
+    const submitController = new AbortController();
+    const submitTimer = setTimeout(() => submitController.abort(), 150000);
+    let submitRes: Response;
+    try {
+      submitRes = await withRetry(() => fetch(`${baseUrl}/v1/videos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify(submitBody),
+        signal: submitController.signal,
+      }));
+    } finally {
+      clearTimeout(submitTimer);
+    }
     if (!submitRes.ok) throw new Error(`Agnes Video 提交失败 ${submitRes.status}: ${(await submitRes.text()).slice(0, 200)}`);
     const submitData = await submitRes.json() as any;
 
