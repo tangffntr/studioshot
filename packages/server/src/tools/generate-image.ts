@@ -6,19 +6,30 @@
 import { make, type Content } from "./tool";
 import { Model } from "../model-manager/facade";
 import { getDb } from "../db/client";
-import { media } from "../db/schema";
+import { media, materials } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { oss } from "../storage/oss";
 import * as crypto from "node:crypto";
 import { GenerateImageInput } from "@ecom/shared";
 import type { GenerateImageOutput } from "@ecom/shared";
 
-/** 从 mediaId 读图片 base64（供参考图） */
-export async function readMediaBase64(mediaId: string): Promise<string> {
+/**
+ * 从 id 读图片 base64（供参考图）。
+ * id 可以是 media.id，也可以是 materials.id（素材库素材）：
+ *   - 先查 media 表，命中则用其 filePath 读图；
+ *   - 再查 materials 表，命中则用其 filePath 读图。
+ * materials.id 与 media.id 都是 UUID，互不冲突，统一 id 空间查找安全。
+ * 这样无需为素材单独建 media 记录即可作为参考图。
+ */
+export async function readMediaBase64(id: string): Promise<string> {
   const db = getDb();
-  const m = db.select().from(media).where(eq(media.id, mediaId)).all()[0];
-  if (!m) throw new Error(`media ${mediaId} 不存在`);
-  return await oss.getImageBase64(m.filePath);
+  // 1. 优先查 media 表（产品图/生成图）
+  const m = db.select().from(media).where(eq(media.id, id)).all()[0];
+  if (m) return await oss.getImageBase64(m.filePath);
+  // 2. 回退查 materials 表（素材库素材）
+  const mat = db.select().from(materials).where(eq(materials.id, id)).all()[0];
+  if (mat?.filePath) return await oss.getImageBase64(mat.filePath);
+  throw new Error(`图片 ${id} 不存在（media / materials 表均未找到）`);
 }
 
 export const generateImageTool = make<{ prompt: string; referenceMediaIds: string[]; size: string; purpose: string }, GenerateImageOutput>(

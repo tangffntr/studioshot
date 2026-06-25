@@ -29,9 +29,16 @@ const MAX_STEPS = 25;
 const SYSTEM_PROMPT = `你是一个电商出图 Agent，负责根据用户指令生成电商图片。你是全模态的，可以与用户自由对话，也可以直接生成图片。
 
 核心原则：
-- 用户给了产品图（消息中含 media id）→ 先 analyze_product 分析，再 generate_image 出图
+- 用户给了产品图（消息中含 media id 或图片）→ 先 analyze_product 分析，再 generate_image 出图
 - 用户没给产品图，只是描述需求（如"生成一只猫"）→ 直接 generate_image（不传 referenceMediaIds），根据用户描述生成
 - 用户只是聊天提问（不需要图片）→ 直接文字回复，不调任何工具
+
+⭐ 多图融合规则（非常重要）：
+- 用户消息可能含多张图片：第 1 张是产品图（主图），其余是参考素材图（如场景/背景/模特/风格图）
+- 生成图片时，必须把"产品图 + 所有参考素材图"一并放入 generate_image 的 referenceMediaIds 数组，实现多图融合
+- 融合示例：产品图(杯子) + 参考素材(窗台场景) → 把杯子放进窗台场景；产品图(衣服) + 参考素材(模特) → 让模特穿上该衣服
+- 产品图是核心，必须保持其外观保真；参考素材图用于确定场景/背景/构图/模特等
+- 若用户明确说"只用产品图"或参考素材与需求无关，可只带产品图
 
 ⭐ 续接对话规则（非常重要）：
 - 当用户消息中包含"重要提示：上面是上次生成的产品图片"时，说明这是续接对话
@@ -195,10 +202,47 @@ export async function runAgentLoop(opts: AgentRunOptions): Promise<AgentRunResul
     }
   } else {
     // 新对话模式
-    messages = [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: opts.instruction + (opts.initialMediaIds.length ? `\n\n产品图 media id: ${opts.initialMediaIds.join(", ")}` : "") },
-    ];
+    messages = [{ role: "system", content: SYSTEM_PROMPT }];
+
+    // ⭐ 多图融合：把产品图 + 参考素材图都读成 base64，作为多模态图片喂给主 LLM
+    // 第 1 张是产品图（主图），其余是参考素材（场景/背景/模特等）
+    if (opts.initialMediaIds.length > 0) {
+      const imageParts: any[] = [];
+      const idLabels: string[] = [];
+      for (let i = 0; i < opts.initialMediaIds.length; i++) {
+        const mid = opts.initialMediaIds[i];
+        try {
+          const b64 = await readMediaBase64(mid);
+          const url = b64.startsWith("data:") ? b64 : `data:image/png;base64,${b64}`;
+          imageParts.push({ type: "image_url", image_url: { url } });
+          idLabels.push(i === 0 ? `产品图(id:${mid})` : `参考素材${i}(id:${mid})`);
+        } catch (e: any) {
+          // 单张图读取失败不阻断，仅记录
+          console.error(`[agent] 读取参考图 ${mid} 失败:`, e?.message);
+        }
+      }
+
+      if (imageParts.length > 0) {
+        const roleText = imageParts.length === 1
+          ? "以下是用户提供的产品图："
+          : `以下是用户提供的产品图和参考素材图（第1张为产品图，其余为参考素材）。图片顺序：${idLabels.join("、")}`;
+        messages.push({
+          role: "user",
+          content: [
+            { type: "text", text: `${opts.instruction}\n\n${roleText}` },
+            ...imageParts,
+          ],
+        });
+      } else {
+        // 图片全部读取失败，退化为纯文本（保留 id 供 LLM 决策）
+        messages.push({
+          role: "user",
+          content: opts.instruction + (opts.initialMediaIds.length ? `\n\n参考图 id: ${opts.initialMediaIds.join(", ")}（图片读取失败，请按用户描述生成）` : ""),
+        });
+      }
+    } else {
+      messages.push({ role: "user", content: opts.instruction });
+    }
   }
 
   emit("job.started" as EventType, { jobId: opts.jobId });

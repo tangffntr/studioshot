@@ -28,6 +28,7 @@ import type { EventType, SseEvent } from "@ecom/shared";
 import { addTextOverlay, extractTextFromPrompt } from "../storage/text-overlay";
 import { generateBlueprint } from "../template/blueprint";
 import { resolveOutputSize, getCellSize, type GridSize } from "../utils/size-resolver";
+import { readMediaBase64 } from "../tools/generate-image";
 
 const ANALYZE_PROMPT = `你是一个电商产品分析专家。请分析这张产品图，输出严格的 JSON：
 {
@@ -128,7 +129,7 @@ async function analyzeForRender(sourceMediaId: string): Promise<ProductAttribute
 }
 
 /** Pipeline 任务执行入口（优化版：网格合并+后端切割+页面规划确认） */
-export async function runPipelineJob(jobId: string, templateId: string, productId: string, sourceMediaId: string): Promise<void> {
+export async function runPipelineJob(jobId: string, templateId: string, productId: string, sourceMediaIds: string[]): Promise<void> {
   const db = getDb();
 
   // 标记 running
@@ -147,7 +148,8 @@ export async function runPipelineJob(jobId: string, templateId: string, productI
     // 2. 分析产品属性
     emit("job.progress" as EventType, { jobId, progress: 10, message: "分析产品属性..." });
     console.log(`[pipeline] job=${jobId.slice(0,8)} 分析产品...`);
-    const attrs = await analyzeForRender(sourceMediaId);
+    // 产品分析只用主图（第 1 张），参考素材图不参与属性识别
+    const attrs = await analyzeForRender(sourceMediaIds[0]);
     console.log(`[pipeline] job=${jobId.slice(0,8)} 分析完成:`, JSON.stringify(attrs));
     emit("agent.message" as EventType, { jobId, text: `产品分析：${attrs.category || "product"}，颜色 ${attrs.color || "neutral"}，材质 ${attrs.material || "premium"}` });
 
@@ -245,9 +247,18 @@ export async function runPipelineJob(jobId: string, templateId: string, productI
     applyStyleLock(rendered, styleLock);
     console.log(`[pipeline] job=${jobId.slice(0,8)} style lock 已生成`);
 
-    // 4. 读源图 base64（图生图参考，保证产品保真）
-    const srcMedia = db.select().from(media).where(eq(media.id, sourceMediaId)).all()[0];
-    const srcB64 = srcMedia ? await oss.getImageBase64(srcMedia.filePath) : "";
+    // 4. 读全部参考图 base64（产品图 + 参考素材图，多图融合保真）
+    // sourceMediaIds[0] 是产品图，其余是参考素材（场景/背景/模特等）
+    const refB64List: string[] = [];
+    for (const rid of sourceMediaIds) {
+      try {
+        const b64 = await readMediaBase64(rid);
+        refB64List.push(b64);
+      } catch (e: any) {
+        console.error(`[pipeline] 读取参考图 ${rid} 失败:`, e?.message);
+      }
+    }
+    console.log(`[pipeline] job=${jobId.slice(0,8)} 读取 ${refB64List.length}/${sourceMediaIds.length} 张参考图`);
 
     // 5. 按类型分组，生成网格大图
     const groups = groupSlotsByType(rendered);
@@ -306,7 +317,8 @@ export async function runPipelineJob(jobId: string, templateId: string, productI
           const outputSize = resolveOutputSize(cellSize, batchGridSize, groupKey);
           const facade = Model.image(batchSlots[0].slot.taskSlotKey).generate({
             prompt: gridPrompt,
-            referenceImages: srcB64 ? [srcB64] : [],
+            // 多图融合：产品图 + 所有参考素材图都作为参考输入
+            referenceImages: refB64List,
             size: outputSize,
           });
 

@@ -78,13 +78,13 @@ export async function runJob(jobId: string): Promise<void> {
   // 分流：有 templateId 走 Pipeline（pipeline 自己管 job 状态）
   if (templateId) {
     const attachments: string[] = payload.attachments || [];
-    const sourceMediaId = attachments[0];
-    if (!sourceMediaId) {
+    if (attachments.length === 0) {
       db.update(jobs).set({ status: "failed", error: "pipeline 任务需提供 source mediaId（attachments[0]）", finishedAt: Date.now() }).where(eq(jobs.id, jobId)).run();
       eventBus.publish({ type: "job.failed", jobId, error: "缺少 source mediaId" });
       return;
     }
-    await runPipelineJob(jobId, templateId, job.productId || "", sourceMediaId);
+    // 传完整 attachments 数组：第 1 张是产品图，其余是参考素材图
+    await runPipelineJob(jobId, templateId, job.productId || "", attachments);
     return;
   }
 

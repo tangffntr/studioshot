@@ -38,10 +38,12 @@ export default function ChatView() {
   const [imgPreview, setImgPreview] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
-  // 素材库选择
+  // 素材库选择（多选）
   const [materials, setMaterials] = createSignal<Array<any>>([]);
   const [showMaterials, setShowMaterials] = createSignal(false);
-  const [selMaterial, setSelMaterial] = createSignal<any | null>(null);
+  const [selMaterials, setSelMaterials] = createSignal<Array<any>>([]);
+  // 弹窗内临时选中（多选，确定后才提交到 selMaterials）
+  const [pendingMaterials, setPendingMaterials] = createSignal<Array<any>>([]);
   // 资产库选择
   const [assets, setAssets] = createSignal<Array<any>>([]);
   const [showAssets, setShowAssets] = createSignal(false);
@@ -83,9 +85,23 @@ export default function ChatView() {
   };
 
   const pickMaterial = (m: any) => {
-    setSelMaterial(m);
+    // 多选 toggle：已选则移除，未选则加入
+    setPendingMaterials((cur) => {
+      const exists = cur.find((x) => x.id === m.id);
+      return exists ? cur.filter((x) => x.id !== m.id) : [...cur, m];
+    });
+  };
+
+  const openMaterialPicker = () => {
+    loadMaterials();
+    // 打开时用当前已确认的选中初始化临时态
+    setPendingMaterials([...selMaterials()]);
+    setShowMaterials(true);
+  };
+
+  const confirmMaterials = () => {
+    setSelMaterials([...pendingMaterials()]);
     setShowMaterials(false);
-    // 不填入输入框，发送时自动拼接
   };
 
   const pickAsset = (a: any) => {
@@ -118,6 +134,18 @@ export default function ChatView() {
     if (fileInput) fileInput.value = "";
   };
 
+  // 把选中的多个素材转为 attachment id 列表（作为参考图传给后端）
+  // sourceMediaId 优先（指向 media 表），否则用素材自身 id（后端从 materials 表读图）
+  const materialAttachmentIds = (): string[] => {
+    return selMaterials()
+      .filter((m) => m.filePath || m.sourceMediaId) // 仅有图的素材才作参考
+      .map((m) => m.sourceMediaId || m.id);
+  };
+
+  const removeSelMaterial = (id: string) => {
+    setSelMaterials((cur) => cur.filter((m) => m.id !== id));
+  };
+
   // textarea 自适应高度
   const autoResize = (el: HTMLTextAreaElement) => {
     el.style.height = "auto";
@@ -131,12 +159,13 @@ export default function ChatView() {
 
     // 构建增强指令：用户输入 + 素材 prompt + 平台约束
     let instruction = text() || "";
-    // 选了素材时，把素材 prompt 拼接到指令前
-    if (selMaterial()?.promptText) {
-      const matPrompt = selMaterial().promptText;
+    // 选了多个素材时，把素材 prompt 拼接到指令前（作为辅助说明，参考图在 attachments 里传）
+    const matPrompts = selMaterials().map((m) => m.promptText).filter(Boolean);
+    if (matPrompts.length > 0) {
+      const matPrompt = matPrompts.join("\n");
       instruction = instruction ? `${matPrompt}\n\n用户补充要求：${instruction}` : matPrompt;
     }
-    if (!instruction && !productImg() && !selAsset()) return;
+    if (!instruction && !productImg() && !selAsset() && selMaterials().length === 0) return;
     if (!instruction) instruction = "生成图片";
     if (platform()) {
       const rules: Record<string, string> = {
@@ -170,10 +199,11 @@ export default function ChatView() {
           if (!continueBody.attachments) continueBody.attachments = [];
           continueBody.attachments.push(selAsset().id);
         }
-        // 如果选择了素材，添加素材的 sourceMediaId
-        if (selMaterial()?.sourceMediaId) {
+        // 如果选择了素材（多个），把素材图作为参考图加入 attachments
+        const matIds = materialAttachmentIds();
+        if (matIds.length > 0) {
           if (!continueBody.attachments) continueBody.attachments = [];
-          continueBody.attachments.push(selMaterial().sourceMediaId);
+          continueBody.attachments.push(...matIds);
         }
 
         // ⭐ 如果没有新的 attachment，使用上次生成的产品图
@@ -221,9 +251,11 @@ export default function ChatView() {
           if (!jobBody.attachments) jobBody.attachments = [];
           jobBody.attachments.push(selAsset().id);
         }
-        if (selMaterial()?.sourceMediaId) {
+        // 如果选择了素材（多个），把素材图作为参考图加入 attachments
+        const matIds = materialAttachmentIds();
+        if (matIds.length > 0) {
           if (!jobBody.attachments) jobBody.attachments = [];
-          jobBody.attachments.push(selMaterial().sourceMediaId);
+          jobBody.attachments.push(...matIds);
         }
         if (mode() === "template") {
           // 根据平台选择对应的模板ID
@@ -243,7 +275,7 @@ export default function ChatView() {
         setState("jobStatus", "queued");
       }
 
-      setText(""); setProductImg(null); setImgName("");
+      setText(""); setProductImg(null); setImgName(""); setSelMaterials([]); setSelAsset(null); setImgPreview(null);
     } catch (e: any) {
       setError(e.message || "提交失败");
     } finally {
@@ -308,22 +340,35 @@ export default function ChatView() {
                 <button class="input-preview-delete" onClick={removeProductImg}>✕</button>
               </div>
             </Show>
+            {/* 已选素材多图预览条（区别于产品图单预览槽） */}
+            <Show when={selMaterials().length > 0}>
+              <div class="input-materials-preview">
+                <For each={selMaterials()}>
+                  {(m) => (
+                    <div class="input-material-chip" title={m.name}>
+                      <img src={m.url} alt={m.name} />
+                      <button class="input-preview-delete" onClick={() => removeSelMaterial(m.id)}>✕</button>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
             <textarea ref={textareaEl} value={text()} onInput={(e) => { setText(e.currentTarget.value); autoResize(e.currentTarget); }} onKeyDown={onKeyDown}
-              placeholder={selMaterial() ? `素材已选: ${selMaterial().name}，输入补充要求或直接发送` : selAsset() ? `资产已选: ${(selAsset().slotCode || "图片").slice(0, 15)}... 描述需求或直接发送` : imgName() ? `已选: ${imgName().slice(0, 20)}... 描述需求或直接发送` : "描述你想要的图片..."} rows={2} />
+              placeholder={selMaterials().length > 0 ? `已选 ${selMaterials().length} 个素材，输入融合要求或直接发送` : selAsset() ? `资产已选: ${(selAsset().slotCode || "图片").slice(0, 15)}... 描述需求或直接发送` : imgName() ? `已选: ${imgName().slice(0, 20)}... 描述需求或直接发送` : "描述你想要的图片..."} rows={2} />
             <div class="input-bottom">
               <div class="input-left-actions">
                 <button class="input-action-btn" onClick={() => fileInput?.click()} title="上传产品图">
                   ＋
                 </button>
                 <input ref={fileInput} type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} />
-                <button class="input-action-btn" onClick={() => { loadMaterials(); setShowMaterials(true); }} title="选择素材">
+                <button class="input-action-btn" onClick={openMaterialPicker} title="选择素材（可多选，作为参考图）">
                   ⭐
                 </button>
                 <button class="input-action-btn" onClick={() => { loadAssets(); setShowAssets(true); }} title="选择资产库图片">
                   🖼️
                 </button>
               </div>
-              <button class="send-btn" onClick={send} disabled={busy() || (!text().trim() && !productImg() && !selAsset())}>
+              <button class="send-btn" onClick={send} disabled={busy() || (!text().trim() && !productImg() && !selAsset() && selMaterials().length === 0)}>
                 🚀
               </button>
             </div>
@@ -332,23 +377,33 @@ export default function ChatView() {
         </div>
       </div>
 
-      {/* 素材选择弹窗 */}
+      {/* 素材选择弹窗（多选） */}
       <Show when={showMaterials()}>
         <div class="lightbox" onClick={() => setShowMaterials(false)}>
           <div class="material-picker" onClick={(e) => e.stopPropagation()}>
-            <div class="font-display" style={{ "font-size": "16px", "margin-bottom": "12px" }}>选择素材</div>
+            <div class="font-display" style={{ "font-size": "16px", "margin-bottom": "12px", display: "flex", "justify-content": "space-between", "align-items": "center" }}>
+              <span>选择素材（可多选，作为参考图融合）</span>
+              <span class="hint" style={{ "font-size": "12px" }}>已选 {pendingMaterials().length} 个</span>
+            </div>
             <Show when={materials().length === 0}>
               <div class="hint">暂无素材。在资产库中「存为素材」添加。</div>
             </Show>
             <div class="material-picker-grid">
-              <For each={materials()}>{(m) => (
-                <div class="material-pick-item" onClick={() => pickMaterial(m)}>
-                  <img src={m.url} alt={m.name} />
-                  <div class="hint" style={{ "font-size": "10px", "text-align": "center" }}>{m.name}</div>
-                </div>
-              )}</For>
+              <For each={materials()}>{(m) => {
+                const selected = () => !!pendingMaterials().find((x) => x.id === m.id);
+                return (
+                  <div class={`material-pick-item ${selected() ? "selected" : ""}`} onClick={() => pickMaterial(m)}>
+                    <img src={m.url} alt={m.name} />
+                    <Show when={selected()}><span class="material-pick-check">✓</span></Show>
+                    <div class="hint" style={{ "font-size": "10px", "text-align": "center" }}>{m.name}</div>
+                  </div>
+                );
+              }}</For>
             </div>
-            <button class="btn btn-ghost btn-sm" style={{ "margin-top": "10px" }} onClick={() => setShowMaterials(false)}>关闭</button>
+            <div style={{ "margin-top": "10px", display: "flex", "gap": "8px", "justify-content": "flex-end" }}>
+              <button class="btn btn-ghost btn-sm" onClick={() => setShowMaterials(false)}>取消</button>
+              <button class="btn btn-sm" onClick={confirmMaterials}>确定（{pendingMaterials().length}）</button>
+            </div>
           </div>
         </div>
       </Show>
