@@ -64,13 +64,14 @@ function groupSlotsByType(slots: RenderedSlot[]): Map<string, RenderedSlot[]> {
 
 /** 获取网格大小配置 */
 function getGridSize(groupKey: string, _slotCount: number): GridSize {
-  // 主图（1024x1024）：使用2x2网格
+  // 主图（1024x1024，1:1）：使用2x2网格，切出4张正方形主图
   if (groupKey === "hero") {
     return "2x2";
   }
-  // 详情页（1024x2400）：使用1x2网格（纵向拼接）
+  // 详情页（3:4竖版）：使用2x2网格，切出4张1024x1365竖版图
+  // （原1x2纵向拼接只切2张且浪费，2x2能一次切4张，效率更高）
   if (groupKey === "detail") {
-    return "1x2";
+    return "2x2";
   }
   // 其他：默认2x2
   return "2x2";
@@ -298,24 +299,30 @@ export async function runPipelineJob(jobId: string, templateId: string, productI
         for (let gridIndex = 0; gridIndex < gridCount; gridIndex++) {
           const startIndex = gridIndex * cellsPerGrid;
           const endIndex = Math.min(startIndex + cellsPerGrid, groupSlots.length);
-          const batchSlots = groupSlots.slice(startIndex, endIndex);
+          const realSlots = groupSlots.slice(startIndex, endIndex);
+          const realSlotCount = realSlots.length;
 
-          // 如果最后一张不足一个网格，使用1x1单独生成
-          const batchGridSize = batchSlots.length === 1 ? "1x1" : gridSize;
+          // ⭐ 不足一批时用占位 slot 填满网格（保证同尺寸/同批次，消除 1x1 单独生成）
+          // 占位用重复最后一个真实 slot 的 prompt（或通用占位指令），切完只取真实的 realSlotCount 张
+          const placeholderPrompt = realSlots[realSlots.length - 1]?.prompt || "同款产品的另一个视角，简洁背景，留白";
+          const batchSlots: RenderedSlot[] = [...realSlots];
+          while (batchSlots.length < cellsPerGrid) {
+            batchSlots.push({ ...realSlots[realSlots.length - 1], prompt: placeholderPrompt });
+          }
 
           emit("job.progress" as EventType, {
             jobId,
             progress: progressBase + Math.round((gridIndex / gridCount) * (80 / totalGroups)),
-            message: `生成${groupKey === "hero" ? "主图" : "详情页"}组（${startIndex + 1}-${endIndex}/${groupSlots.length}，${batchGridSize}网格）`
+            message: `生成${groupKey === "hero" ? "主图" : "详情页"}组（${startIndex + 1}-${endIndex}/${groupSlots.length}${realSlotCount < cellsPerGrid ? `，含${cellsPerGrid - realSlotCount}占位` : ""}，${gridSize}网格）`
           });
 
-          // 生成网格prompt
-          const gridPrompt = generateGridPrompt(batchSlots, batchGridSize);
-          console.log(`[pipeline] job=${jobId.slice(0,8)} 生成${groupKey}组网格 ${gridIndex + 1}/${gridCount} prompt=${gridPrompt.slice(0,100)}...`);
+          // 生成网格prompt（占位 slot 一起拼进网格描述）
+          const gridPrompt = generateGridPrompt(batchSlots, gridSize);
+          console.log(`[pipeline] job=${jobId.slice(0,8)} 生成${groupKey}组网格 ${gridIndex + 1}/${gridCount} 真实${realSlotCount}/${cellsPerGrid} prompt=${gridPrompt.slice(0,100)}...`);
 
-          // 调用API生成网格大图（使用 resolveOutputSize 计算最终尺寸）
-          const outputSize = resolveOutputSize(cellSize, batchGridSize, groupKey);
-          const facade = Model.image(batchSlots[0].slot.taskSlotKey).generate({
+          // 调用API生成网格大图（统一用 gridSize，保证所有批次同尺寸）
+          const outputSize = resolveOutputSize(cellSize, gridSize, groupKey);
+          const facade = Model.image(realSlots[0].slot.taskSlotKey).generate({
             prompt: gridPrompt,
             // 多图融合：产品图 + 所有参考素材图都作为参考输入
             referenceImages: refB64List,
@@ -327,16 +334,14 @@ export async function runPipelineJob(jobId: string, templateId: string, productI
           const gridResult = await facade.save(`/${productId}/template/grid_${groupKey}_${gridIndex}_${crypto.randomUUID()}.png`, productId, gridPrompt, jobId);
           console.log(`[pipeline] job=${jobId.slice(0,8)} ${groupKey}组网格 ${gridIndex + 1}/${gridCount} 生成完成，base64长度: ${gridResult.base64?.length || 0}`);
 
-          // 切割网格大图
-          const cells = batchGridSize === "1x1"
-            ? [{ base64: gridResult.base64, position: { row: 0, col: 0 } }]
-            : await oss.cutGridImage(gridResult.base64, batchGridSize);
-          console.log(`[pipeline] job=${jobId.slice(0,8)} ${groupKey}组网格 ${gridIndex + 1}/${gridCount} 切割完成，${cells.length}张子图`);
+          // 切割网格大图（统一走 cutGridImage，按图片实际宽高动态均分）
+          const cells = await oss.cutGridImage(gridResult.base64, gridSize);
+          console.log(`[pipeline] job=${jobId.slice(0,8)} ${groupKey}组网格 ${gridIndex + 1}/${gridCount} 切割完成，${cells.length}格（取前${realSlotCount}张）`);
 
-          // 保存每个子图
-          for (let i = 0; i < cells.length && i < batchSlots.length; i++) {
+          // 保存每个子图（只取真实的 realSlotCount 张，占位格子丢弃）
+          for (let i = 0; i < cells.length && i < realSlotCount; i++) {
             const cell = cells[i];
-            const slot = batchSlots[i];
+            const slot = realSlots[i];
 
             const fileId = crypto.randomUUID();
             const filePath = `/${productId}/template/${slot.slot.slotCode}_${fileId}.png`;
