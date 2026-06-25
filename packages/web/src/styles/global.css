@@ -802,8 +802,6 @@ select.field { appearance: none; background-image: url("data:image/svg+xml,%3Csv
 .tool-step-item.done .tool-step-status { color: var(--success); }
 .tool-step-item.failed .tool-step-status { color: #f87171; }
 .tool-step-item.running .tool-step-status { color: var(--tool); animation: thinking-pulse 1s infinite; }
-  flex-shrink: 0;
-}
 .msg-content { flex: 1; padding-top: 3px; }
 .msg-content.agent { color: var(--agent); font-weight: 500; }
 .msg-content .msg-img { max-width: 200px; border-radius: 6px; margin-top: 6px; }
