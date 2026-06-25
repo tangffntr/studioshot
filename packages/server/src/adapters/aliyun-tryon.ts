@@ -6,11 +6,11 @@
  *   异步：提交得 task_id → GET 轮询 → image_url
  *
  * 约束：阿里云要求 person_image_url / top_garment_url 为公网 URL（非 base64）。
- * MVP 简化：适配器接受 base64，调用方需确保图片可公网访问
- * （生产环境需配 OSS 公网 URL 或图床；当前用 data url 尝试，阿里云可能拒绝）。
+ * 优先上传腾讯云 COS 换公网 URL；COS 未配置时降级用 base64 data url（阿里云可能拒绝）。
  */
 import type { VendorAdapter } from "./base";
 import { withRetry } from "../utils/retry";
+import { uploadImageBase64ToCos, isCosConfigured } from "../storage/cos";
 
 export interface TryonRequest {
   personImageBase64: string; // 模特正面全身照
@@ -33,17 +33,25 @@ export class AliyunTryonAdapter implements VendorAdapter {
     if (!apiKey) throw new Error("阿里云试穿缺少 apiKey（DASHSCOPE_API_KEY）");
     const baseUrl = "https://dashscope.aliyuncs.com/api/v1/services/aigc/image2image/image-synthesis";
 
-    // 构造请求（阿里云要求公网 URL；base64 需转 data url，阿里云可能不接受）
-    const toDataUrl = (b64: string) => (b64.startsWith("data:") ? b64 : `data:image/png;base64,${b64}`);
+    // 构造请求：阿里云要求公网 URL。
+    // 优先上传 COS 换公网 URL；COS 未配置时降级用 data url（阿里云可能拒绝）。
+    const toUrl = async (b64: string): Promise<string> => {
+      if (isCosConfigured()) {
+        try { return await uploadImageBase64ToCos(b64, "png"); }
+        catch (e: any) { console.error("[tryon] 上传 COS 失败，降级 data url:", e.message); }
+      }
+      return b64.startsWith("data:") ? b64 : `data:image/png;base64,${b64}`;
+    };
+    const personUrl = await toUrl(req.personImageBase64);
     const body: Record<string, unknown> = {
       model: "aitryon",
       input: {
-        person_image_url: toDataUrl(req.personImageBase64),
+        person_image_url: personUrl,
       },
       parameters: { resolution: -1, restore_face: true },
     };
-    if (req.topGarmentBase64) (body.input as any).top_garment_url = toDataUrl(req.topGarmentBase64);
-    if (req.bottomGarmentBase64) (body.input as any).bottom_garment_url = toDataUrl(req.bottomGarmentBase64);
+    if (req.topGarmentBase64) (body.input as any).top_garment_url = await toUrl(req.topGarmentBase64);
+    if (req.bottomGarmentBase64) (body.input as any).bottom_garment_url = await toUrl(req.bottomGarmentBase64);
 
     // 1. 提交任务
     const submitRes = await withRetry(() => fetch(baseUrl, {

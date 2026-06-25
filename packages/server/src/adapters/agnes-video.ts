@@ -11,10 +11,11 @@
  * 视频 URL：data.remixed_from_video_id（仅 completed 时）
  *
  * 注意：图生视频/多图视频需要"可公网访问的图片 URL"（官方明确，不支持 base64）。
- *       当前 OSS 为本地存储，无法提供公网 URL，故图生视频暂以文生视频兜底。
+ *       首帧/参考图会先上传腾讯云 COS 换取公网 URL，再传给 agnes。
  */
 import type { VendorAdapter } from "./base";
 import { withRetry } from "../utils/retry";
+import { uploadImageBase64ToCos } from "../storage/cos";
 
 export interface AgnesVideoRequest {
   prompt: string;
@@ -68,6 +69,26 @@ export class AgnesVideoAdapter implements VendorAdapter {
     const { width, height } = dimsFromAspectRatio(req.aspectRatio);
     const { num_frames, frame_rate } = framesFromDuration(req.duration || 5);
 
+    // 图生视频：把首帧/参考图上传 COS 拿公网 URL（agnes 不支持 base64，需公网 URL）。
+    // - 单首帧（图生视频）：放顶层 image 字段
+    // - 多参考图（多图视频）：放 extra_body.image 数组
+    const imageUrls: string[] = [];
+    if (req.firstFrameBase64) {
+      try {
+        const url = await uploadImageBase64ToCos(req.firstFrameBase64, "png");
+        imageUrls.push(url);
+        console.log(`[agnes-video] 首帧已上传 COS: ${url.slice(0, 60)}...`);
+      } catch (e: any) {
+        console.error(`[agnes-video] 首帧上传 COS 失败，降级文生视频:`, e.message);
+      }
+    }
+    if (req.referenceImages && req.referenceImages.length > 0) {
+      for (const b64 of req.referenceImages) {
+        try { imageUrls.push(await uploadImageBase64ToCos(b64, "png")); }
+        catch (e: any) { console.error(`[agnes-video] 参考图上传 COS 失败:`, e.message); }
+      }
+    }
+
     // 1. 提交任务（POST /v1/videos）
     const submitBody: Record<string, unknown> = {
       model,
@@ -77,6 +98,12 @@ export class AgnesVideoAdapter implements VendorAdapter {
       num_frames,
       frame_rate,
     };
+    // 图生视频：单图用顶层 image，多图用 extra_body.image 数组
+    if (imageUrls.length === 1) {
+      submitBody.image = imageUrls[0];
+    } else if (imageUrls.length > 1) {
+      submitBody.extra_body = { image: imageUrls };
+    }
 
     const submitRes = await withRetry(() => fetch(`${baseUrl}/v1/videos`, {
       method: "POST",
