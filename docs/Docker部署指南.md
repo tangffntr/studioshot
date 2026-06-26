@@ -1,6 +1,20 @@
 # Docker 部署指南
 
-本文档说明如何将 OPC 电商出图平台部署到云服务器（单容器架构）。
+本文档说明如何将 OPC 电商出图平台部署到云服务器（单容器架构 + 自建 git 仓库）。
+
+## 完整流程
+
+```
+本地开发机                      云服务器(Ubuntu)
+─────────────                  ──────────────────
+                               ① bash server-setup.sh    (一次性初始化)
+② git remote add origin ...
+③ git push -u origin master  → bare git 仓库 /opt/opc.git
+                               ④ git clone /opt/opc.git /opt/opc
+                               ⑤ 配置 .env
+                               ⑥ bash deploy.sh           (一键部署)
+                                  └→ 访问 http://IP:4096
+```
 
 ## 架构
 
@@ -16,29 +30,49 @@
     └── oss/          生成的图片文件
 ```
 
-## 前置条件
+---
 
-- 云服务器已安装 Docker
-- 域名已解析到服务器（如需 HTTPS，配反向代理或证书）
+## 步骤详解
 
-## 部署步骤
+### 步骤 1：服务器初始化（一次性，在服务器上执行）
 
-### 1. 上传代码到服务器
+SSH 登录云服务器，上传并运行初始化脚本：
 
 ```bash
-# 方式一：git clone（推荐）
-git clone <你的仓库地址> /opt/opc
-cd /opt/opc
+# 方式一：本地先把 server-setup.sh 上传到服务器
+scp server-setup.sh root@你的服务器IP:/root/
+ssh root@你的服务器IP
+bash /root/server-setup.sh
 
-# 方式二：本地打包上传
-scp -r . root@你的服务器IP:/opt/opc
+# 方式二：直接在服务器上手动执行脚本内容
 ```
 
-### 2. 创建 .env 配置
+脚本会自动：检查/安装 Docker + Git、创建 bare git 仓库 `/opt/opc.git`、创建数据目录 `/opt/opc-data`。
 
-在项目根目录（与 Dockerfile 同级）创建 `.env`：
+完成后脚本会显示服务器 IP，记下来。
+
+### 步骤 2：本地添加远程并推送（在开发机执行）
 
 ```bash
+cd /path/to/opc   # 你的本地项目目录
+
+# 添加远程（替换 YOUR_SERVER_IP）
+git remote add origin ssh://root@YOUR_SERVER_IP/opt/opc.git
+
+# 推送
+git push -u origin master
+```
+
+### 步骤 3：服务器拉取代码 + 配置环境变量
+
+```bash
+ssh root@YOUR_SERVER_IP
+
+# 克隆代码
+git clone /opt/opc.git /opt/opc
+cd /opt/opc
+
+# 配置环境变量
 cp .env.example .env
 vim .env
 ```
@@ -50,8 +84,9 @@ ORCHESTRATOR_BASE_URL=https://your-llm-endpoint/v1
 ORCHESTRATOR_API_KEY=your-key
 ORCHESTRATOR_MODEL=your-model
 
-# 凭证加密主密钥（生产必须，生成方式见下）
-MASTER_KEY=<openssl rand -hex 32 生成的64位hex>
+# 凭证加密主密钥（deploy.sh 会自动生成，也可手动）
+# 生成: openssl rand -hex 32
+MASTER_KEY=
 NODE_ENV=production
 
 # 生图模型（按需）
@@ -68,45 +103,18 @@ COS_REGION=ap-shanghai
 COS_PUBLIC_BASE=https://cos.yourdomain.com
 ```
 
-生成 MASTER_KEY：
+### 步骤 4：一键部署
+
 ```bash
-openssl rand -hex 32
+bash deploy.sh
 ```
 
-### 3. 构建镜像
+脚本自动：拉取最新代码 → 构建 Docker 镜像 → 启动容器。完成后显示访问地址。
+
+### 步骤 5：访问验证
 
 ```bash
-docker build -t opc:latest .
-```
-
-首次构建约 5-10 分钟（编译 better-sqlite3/sharp 原生模块）。后续构建利用缓存会快很多。
-
-### 4. 启动容器
-
-```bash
-# 创建数据持久化目录
-mkdir -p /opt/opc-data
-
-# 启动（.env 挂载 + data volume + 端口映射）
-docker run -d \
-  --name opc \
-  --restart unless-stopped \
-  --env-file .env \
-  -v /opt/opc-data:/app/packages/server/data \
-  -p 4096:4096 \
-  opc:latest
-```
-
-**参数说明**：
-- `--env-file .env`：挂载环境变量（API keys 等不打包进镜像）
-- `-v /opt/opc-data:/app/packages/server/data`：数据持久化（数据库+图片）
-- `-p 4096:4096`：端口映射（如需 80 改 `-p 80:4096`）
-- `--restart unless-stopped`：自动重启
-
-### 5. 验证
-
-```bash
-# 查看日志
+# 查看日志（确认启动成功）
 docker logs -f opc
 
 # 健康检查
@@ -116,49 +124,63 @@ curl http://localhost:4096/api/materials
 http://你的服务器IP:4096
 ```
 
-## 更新部署
+---
 
-代码更新后，重新构建并替换容器：
+## 后续更新部署
+
+本地改完代码并 commit 后，**一条命令完成更新**：
 
 ```bash
-git pull                          # 拉取新代码
-docker build -t opc:latest .      # 重新构建
-docker stop opc && docker rm opc  # 停止旧容器
-docker run -d ... opc:latest      # 用相同命令启动（数据在 volume 不丢失）
+# 本地推送
+git push origin master
+
+# 服务器拉取+重新部署（SSH 到服务器）
+cd /opt/opc && bash deploy.sh
 ```
+
+`deploy.sh` 会自动 git pull + 重建镜像 + 重启容器，**数据不丢失**（在 /opt/opc-data volume 里）。
+
+---
 
 ## 数据备份
 
 ```bash
-# 备份数据库和图片
-cp -r /opt/opc-data /backup/opc-data-$(date +%Y%m%d)
-
-# 或打包
+# 备份数据库和图片（在服务器上）
 tar -czf /backup/opc-data-$(date +%Y%m%d).tar.gz /opt/opc-data
+
+# 定时备份（crontab）
+echo "0 3 * * * tar -czf /backup/opc-data-$(date +\%Y\%m\%d).tar.gz /opt/opc-data" | crontab
 ```
+
+---
 
 ## 常见问题
 
 ### Q: better-sqlite3 编译失败？
-确保 builder 阶段有 python3/make/g++（Dockerfile 已装）。如仍失败，检查 Node 版本兼容性（要求 Node 20+）。
+确保 Dockerfile builder 阶段有 python3/make/g++（已配置）。如仍失败，检查 Node 版本（要求 20+）。
 
 ### Q: sharp 报 libvips 错？
-runtime 阶段已装 `libvips-dev`。如仍报错，尝试 `apt-get install -y libvips`。
+runtime 阶段已装 `libvips-dev`。如仍报错：`apt-get install -y libvips`。
 
 ### Q: 视频生成失败（agnes 图生视频）？
-需配置 COS_*（公网图片 URL）。未配置时 agnes 视频端点无法拉取首帧图。
+需配置 COS_*（公网图片 URL）。未配置时 agnes 无法拉取首帧图。
+
+### Q: push 时权限拒绝？
+确保 SSH 密钥已配置（本地 `ssh-keygen` + `ssh-copy-id root@服务器IP`），或服务器允许密码登录。
 
 ### Q: 如何用 HTTPS？
-在容器前加 Nginx/Caddy 反向代理：
+在容器前加 Caddy 反向代理（自动 HTTPS）：
 ```bash
-# Caddy 示例（自动 HTTPS）
-docker run -d --name caddy -p 80:80 -p 443:443 \
+docker run -d --name caddy --restart unless-stopped \
+  -p 80:80 -p 443:443 \
   -v caddy_data:/data \
   caddy caddy reverse-proxy --from yourdomain.com --to localhost:4096
 ```
 
 ### Q: 首次启动数据库是空的？
-首次启动会自动 seed（创建默认供应商/模型/模板/素材）。然后在设置页配置各模型的 API Key 和凭证。
+首次启动自动 seed（创建默认供应商/模型/模板）。然后在设置页配置各模型 API Key 和凭证。
+
+---
 
 ## 文件清单
 
@@ -166,5 +188,7 @@ docker run -d --name caddy -p 80:80 -p 443:443 \
 |---|---|
 | `Dockerfile` | 多阶段构建（builder 编译 + runtime 运行） |
 | `.dockerignore` | 排除 node_modules/data/dist 等 |
-| `.env.example` | 环境变量模板（含 COS） |
+| `server-setup.sh` | 服务器初始化脚本（一次性） |
+| `deploy.sh` | 服务器部署脚本（每次更新跑） |
+| `.env.example` | 环境变量模板 |
 | `.env` | 实际配置（不入 git，部署时创建） |
