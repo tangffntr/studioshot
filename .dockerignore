@@ -1,0 +1,46 @@
+# 依赖（容器内重新安装）
+node_modules/
+**/node_modules/
+
+# 构建产物（容器内重新构建）
+dist/
+**/dist/
+
+# 运行时数据（绝不打包进镜像，用 volume 挂载）
+packages/server/data/app.sqlite*
+packages/server/data/oss/
+packages/server/data/backup/
+packages/server/data/test-tmp/
+packages/server/data/verify/
+
+# 环境变量（部署时挂载，不打包）
+.env
+**/.env
+
+# Git / IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# 测试与脚本产物
+**/*.test.ts
+packages/server/scripts/
+test-*.js
+test-*.png
+test-screenshots/
+generated-materials.json
+
+# 文档（不影响运行）
+docs/
+detail-flow/
+*.md
+!packages/*/README.md
+
+# 平台文件
+Thumbs.db
+.DS_Store
+nul
+
+# 前端设计参考图（非运行时资源）
+packages/web/*.png
