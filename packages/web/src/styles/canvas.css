@@ -49,10 +49,12 @@
 
 .canvas-assets-grid {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
+  grid-auto-rows: max-content;   /* 行高由内容决定，不被压缩 */
   gap: 8px;
   align-content: start;
 }
@@ -64,6 +66,7 @@
   overflow: hidden;
   border: 1px solid var(--border);
   transition: all 0.15s;
+  height: 105px;                 /* 固定高度，保证不堆叠 */
 }
 
 .canvas-asset-item:hover {
@@ -73,7 +76,7 @@
 
 .canvas-asset-item img {
   width: 100%;
-  height: 80px;
+  height: 105px;                 /* 与 item 一致的固定高度 */
   object-fit: cover;
   display: block;
 }
