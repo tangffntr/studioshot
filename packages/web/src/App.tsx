@@ -6,6 +6,7 @@ import { createSignal, onMount, Show, For } from "solid-js";
 import { A, useNavigate } from "@solidjs/router";
 import { state, setState, connectSSE, loadJobs, loadJobConversation, newConversation, type JobSummary } from "./context/store";
 import { toggleTheme } from "./context/theme";
+import { uuid } from "./utils/uuid";
 
 export function AppLayout(props: { children?: any }) {
   const [collapsed, setCollapsed] = createSignal(false);
@@ -175,7 +176,7 @@ function OutputCard(props: { media: any; index: number; onZoom: (url: string) =>
       }).then((r) => r.json());
       setState("currentJobId", job.jobId);
       setState("jobStatus", "queued");
-      setState("messages", (m) => [...m, { id: crypto.randomUUID(), role: "system" as const, text: `🔄 重生成中：${prompt.slice(0, 40)}...`, ts: Date.now() }]);
+      setState("messages", (m) => [...m, { id: uuid(), role: "system" as const, text: `🔄 重生成中：${prompt.slice(0, 40)}...`, ts: Date.now() }]);
     } catch (e: any) {
       console.error("重生成失败", e);
     } finally {

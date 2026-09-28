@@ -4,6 +4,7 @@
  */
 import { createStore } from "solid-js/store";
 import type { PageBlueprint, VisualSamplePackage } from "@ecom/shared";
+import { uuid } from "../utils/uuid";
 
 export interface ChatMessage {
   id: string;
@@ -124,20 +125,20 @@ export async function loadJobConversation(jobId: string) {
 
     // 重建消息流
     const msgs: ChatMessage[] = [];
-    msgs.push({ id: crypto.randomUUID(), role: "user", text: job.instruction, ts: job.createdAt });
-    if (job.error) msgs.push({ id: crypto.randomUUID(), role: "system", text: `任务失败：${job.error}`, ts: job.finishedAt || job.createdAt });
+    msgs.push({ id: uuid(), role: "user", text: job.instruction, ts: job.createdAt });
+    if (job.error) msgs.push({ id: uuid(), role: "system", text: `任务失败：${job.error}`, ts: job.finishedAt || job.createdAt });
     // 产出图作为 media 消息
     const outputs: OutputMedia[] = mediaList.map((m: any) => ({
       id: m.id, url: m.url, promptText: m.promptText, slotCode: m.slotCode, sortOrder: m.sortOrder,
     }));
     for (const m of mediaList) {
-      msgs.push({ id: crypto.randomUUID(), role: "media", mediaId: m.id, mediaUrl: m.url, mediaType: m.type || "image", slotCode: m.slotCode, promptText: m.promptText, ts: m.createdAt });
+      msgs.push({ id: uuid(), role: "media", mediaId: m.id, mediaUrl: m.url, mediaType: m.type || "image", slotCode: m.slotCode, promptText: m.promptText, ts: m.createdAt });
     }
     // 完成总结
     if (job.status === "done" && job.result) {
       try {
         const r = JSON.parse(job.result);
-        if (r.text) msgs.push({ id: crypto.randomUUID(), role: "agent", text: r.text, ts: job.finishedAt || job.createdAt });
+        if (r.text) msgs.push({ id: uuid(), role: "agent", text: r.text, ts: job.finishedAt || job.createdAt });
       } catch {}
     }
 
@@ -167,7 +168,7 @@ export function setPendingBlueprint(blueprint: PageBlueprint) {
   setState("pendingBlueprint", blueprint);
   setState("confirmationStatus", "blueprint_pending");
   push({
-    id: crypto.randomUUID(),
+    id: uuid(),
     role: "system",
     text: "📋 页面规划已生成，请确认后继续",
     ts: Date.now(),
@@ -179,7 +180,7 @@ export function setPendingVisualSample(sample: VisualSamplePackage) {
   setState("pendingVisualSample", sample);
   setState("confirmationStatus", "visual_sample_pending");
   push({
-    id: crypto.randomUUID(),
+    id: uuid(),
     role: "system",
     text: "🎨 视觉样本已生成，请确认后继续",
     ts: Date.now(),
@@ -200,7 +201,7 @@ export async function approveBlueprint(feedback?: string) {
     setState("confirmationStatus", "none");
     setState("pendingBlueprint", null);
     push({
-      id: crypto.randomUUID(),
+      id: uuid(),
       role: "system",
       text: "✅ 页面规划已确认，开始生成图片",
       ts: Date.now(),
@@ -224,7 +225,7 @@ export async function rejectBlueprint(feedback: string) {
     setState("confirmationStatus", "none");
     setState("pendingBlueprint", null);
     push({
-      id: crypto.randomUUID(),
+      id: uuid(),
       role: "system",
       text: "❌ 页面规划已拒绝，正在重新规划",
       ts: Date.now(),
@@ -248,7 +249,7 @@ export async function approveVisualSample(feedback?: string) {
     setState("confirmationStatus", "none");
     setState("pendingVisualSample", null);
     push({
-      id: crypto.randomUUID(),
+      id: uuid(),
       role: "system",
       text: "✅ 视觉样本已确认，开始生成剩余图片",
       ts: Date.now(),
@@ -272,7 +273,7 @@ export async function rejectVisualSample(feedback: string) {
     setState("confirmationStatus", "none");
     setState("pendingVisualSample", null);
     push({
-      id: crypto.randomUUID(),
+      id: uuid(),
       role: "system",
       text: "❌ 视觉样本已拒绝，正在调整",
       ts: Date.now(),
@@ -285,7 +286,7 @@ export async function rejectVisualSample(feedback: string) {
 /** 添加画布项目 */
 export function addCanvasItem(media: { id: string; url: string; promptText: string | null }) {
   const newItem: CanvasItem = {
-    id: crypto.randomUUID(),
+    id: uuid(),
     mediaId: media.id,
     url: media.url,
     promptText: media.promptText,
@@ -353,23 +354,23 @@ function handleEvent(evt: any) {
       setState("toolSteps", []); // 新任务重置工具步骤
       // 续接模式时添加分隔线
       if (state.isContinuation) {
-        push({ id: crypto.randomUUID(), role: "system", text: "─── 续接对话 ───", ts: Date.now() });
+        push({ id: uuid(), role: "system", text: "─── 续接对话 ───", ts: Date.now() });
       } else {
-        push({ id: crypto.randomUUID(), role: "system", text: "任务开始", ts: Date.now() });
+        push({ id: uuid(), role: "system", text: "任务开始", ts: Date.now() });
       }
       break;
     case "job.progress":
       setState("jobProgress", evt.progress || 0);
-      if (evt.message) push({ id: crypto.randomUUID(), role: "system", text: evt.message, ts: Date.now() });
+      if (evt.message) push({ id: uuid(), role: "system", text: evt.message, ts: Date.now() });
       break;
     case "agent.message":
-      if (evt.text) push({ id: crypto.randomUUID(), role: "agent", text: evt.text, ts: Date.now() });
+      if (evt.text) push({ id: uuid(), role: "agent", text: evt.text, ts: Date.now() });
       break;
     case "tool.call": {
       // 聚合到 toolSteps（不再作为零散消息 push）
       const toolName = evt.toolName || "";
       const step: ToolStep = {
-        id: crypto.randomUUID(),
+        id: uuid(),
         toolName,
         status: "running",
         input: toolInputSummary(toolName, (evt as any).toolInput),
@@ -399,7 +400,7 @@ function handleEvent(evt: any) {
         fetch(`/api/media/${evt.mediaId}`).then((r) => r.json()).then((m: any) => {
           if (m) {
             setState("outputMedia", (om) => [...om, { id: m.id, url: m.url, promptText: m.promptText, slotCode: m.slotCode, sortOrder: m.sortOrder }]);
-            push({ id: crypto.randomUUID(), role: "media", mediaId: m.id, mediaUrl: m.url, mediaType: m.type || "image", slotCode: m.slotCode, promptText: m.promptText, ts: Date.now() });
+            push({ id: uuid(), role: "media", mediaId: m.id, mediaUrl: m.url, mediaType: m.type || "image", slotCode: m.slotCode, promptText: m.promptText, ts: Date.now() });
           }
         });
       }
@@ -408,13 +409,13 @@ function handleEvent(evt: any) {
       setState("jobStatus", "done");
       setState("jobProgress", 100);
       setState("isContinuation", false); // 续接完成
-      push({ id: crypto.randomUUID(), role: "system", text: "任务完成", ts: Date.now() });
+      push({ id: uuid(), role: "system", text: "任务完成", ts: Date.now() });
       loadJobs();
       break;
     case "job.failed":
       setState("jobStatus", "failed");
       setState("isContinuation", false);
-      push({ id: crypto.randomUUID(), role: "system", text: `任务失败：${evt.error || ""}`, ts: Date.now() });
+      push({ id: uuid(), role: "system", text: `任务失败：${evt.error || ""}`, ts: Date.now() });
       loadJobs();
       break;
     case "blueprint.ready":
