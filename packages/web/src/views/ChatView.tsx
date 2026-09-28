@@ -7,6 +7,7 @@ import { state, setState } from "../context/store";
 import type { ChatMessage } from "../context/store";
 import { TOOL_LABEL } from "../context/store";
 import BlueprintConfirm from "./BlueprintConfirm";
+import { uuid } from "../utils/uuid";
 
 const MODES = [
   { key: "agent", label: "单图" },
@@ -178,7 +179,7 @@ export default function ChatView() {
       instruction += ` ${rules[platform()] || ""}`;
     }
 
-    setState("messages", (m) => [...m, { id: crypto.randomUUID(), role: "user", text: text() || `[${mode()}] 出图请求`, ts: Date.now() }]);
+    setState("messages", (m) => [...m, { id: uuid(), role: "user", text: text() || `[${mode()}] 出图请求`, ts: Date.now() }]);
 
     // ⭐ 续接模式：当前有已完成的 job 时，使用续接端点
     const shouldContinue = state.currentJobId && state.jobStatus === "done";
