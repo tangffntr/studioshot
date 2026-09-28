@@ -20,7 +20,8 @@ RUN corepack enable
 WORKDIR /app
 
 # 先拷 workspace 配置和 lockfile（利用 Docker 层缓存）
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+# tsconfig.base.json 必须拷入：packages/*/tsconfig.json 均 extends 它，缺失时 tsc 回退默认 ES5 配置导致构建失败
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/server/package.json packages/server/
 COPY packages/web/package.json packages/web/
