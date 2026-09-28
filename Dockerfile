@@ -8,7 +8,9 @@
 FROM node:20-slim AS builder
 
 # 原生模块构建工具链（better-sqlite3 需要 python/make/g++）
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# apt 换腾讯云镜像（国内/腾讯云主机构建提速；deb822 格式源文件）
+RUN sed -i 's|deb.debian.org|mirrors.cloud.tencent.com|g; s|security.debian.org|mirrors.cloud.tencent.com/debian-security|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
     python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 
@@ -23,8 +25,8 @@ COPY packages/shared/package.json packages/shared/
 COPY packages/server/package.json packages/server/
 COPY packages/web/package.json packages/web/
 
-# 安装所有依赖（含 dev，用于构建）
-RUN pnpm install --frozen-lockfile
+# 安装所有依赖（含 dev，用于构建）；registry 走 npmmirror（国内构建提速，tarball 与官方一致）
+RUN pnpm install --frozen-lockfile --registry=https://registry.npmmirror.com
 
 # 拷贝源码
 COPY packages/ packages/
@@ -42,7 +44,9 @@ FROM node:20-slim AS runtime
 
 # sharp 运行时依赖（libvips 等；sharp 0.33+ 通常 prebuilt，但保险起见装上）
 # better-sqlite3 的 .node 已在 builder 编译，runtime 只需 libstdc++
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# apt 换腾讯云镜像（与 builder 阶段一致）
+RUN sed -i 's|deb.debian.org|mirrors.cloud.tencent.com|g; s|security.debian.org|mirrors.cloud.tencent.com/debian-security|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
     libvips-dev \
     && rm -rf /var/lib/apt/lists/*
 
