@@ -18,8 +18,19 @@ export default function SettingsView() {
   const [newVendorCategory, setNewVendorCategory] = createSignal("image");
   const [newVendorAdapter, setNewVendorAdapter] = createSignal("");
   const [newVendorBaseUrl, setNewVendorBaseUrl] = createSignal("");
+  // 内置模板
+  const [templates, setTemplates] = createSignal<any[]>([]);
 
-  const load = async () => { try { setSettings(await fetch("/api/settings").then((r) => r.json())); } catch {} };
+  const load = async () => {
+    try {
+      const [s, t] = await Promise.all([
+        fetch("/api/settings").then((r) => r.json()),
+        fetch("/api/settings/vendor-templates").then((r) => r.json()).catch(() => ({ templates: [] })),
+      ]);
+      setSettings(s);
+      setTemplates(t.templates || []);
+    } catch {}
+  };
   onMount(load);
 
   const startEdit = (v: any) => {
@@ -67,6 +78,17 @@ export default function SettingsView() {
     setShowAddVendor(false);
     setNewVendorId(""); setNewVendorName(""); setNewVendorCategory("image"); setNewVendorAdapter(""); setNewVendorBaseUrl("");
     setSavedMsg("供应商已创建");
+    await load();
+  };
+
+  const addFromTemplate = async (templateId: string) => {
+    const res = await fetch("/api/settings/vendor/from-template", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId }),
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); setSavedMsg(e.error || "从模板创建失败"); return; }
+    setShowAddVendor(false);
+    setSavedMsg(`已从模板创建 ${templateId}（含默认模型），请在卡片中点「配置」填入 API Key`);
     await load();
   };
 
@@ -125,6 +147,12 @@ export default function SettingsView() {
         {/* 添加供应商表单 */}
         <Show when={showAddVendor()}>
           <div class="add-vendor-form">
+            <div class="form-row">
+              <select class="field" value="" onChange={(e) => { const v = e.currentTarget.value; if (v) addFromTemplate(v); }}>
+                <option value="">从内置模板快速添加（推荐，只需填 API Key）…</option>
+                <For each={templates()}>{(t: any) => <option value={t.id}>{t.name} · {t.adapter} · {t.models?.length || 0} 个模型</option>}</For>
+              </select>
+            </div>
             <div class="form-row">
               <input class="field" placeholder="供应商 ID（如 my-vendor）" value={newVendorId()} onInput={(e) => setNewVendorId(e.currentTarget.value)} />
               <input class="field" placeholder="显示名称" value={newVendorName()} onInput={(e) => setNewVendorName(e.currentTarget.value)} />

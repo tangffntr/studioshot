@@ -52,6 +52,8 @@ WORKDIR /app/packages/server
 COPY --from=builder /app/server-prod/node_modules ./node_modules
 # 拷贝 server 编译产物
 COPY --from=builder /app/packages/server/dist ./dist
+# 拷贝内置供应商目录（seed 启动读取）
+COPY --from=builder /app/packages/server/config ./config
 # 拷贝前端构建产物（后端静态托管）
 COPY --from=builder /app/packages/web/dist ../web/dist
 # 拷贝 shared 产物（server 运行时 import @ecom/shared 解析用）

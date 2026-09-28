@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "_comment": "内置供应商/模型/任务槽声明式目录（参考 ZCode builtin 配置思路）。seed 启动时读取灌库，加/换模型只改本文件，不改代码。字段说明：baseUrlEnv/modelNameEnv/credEnv 为 .env 覆盖来源；taskSlots.modelIndex 指向该 vendor.models 的第 N 个模型。",
+  "vendors": [
+    {
+      "id": "grsai",
+      "name": "Grsai (gpt-image-2)",
+      "category": "image",
+      "adapter": "grsai",
+      "baseUrl": "https://grsai.dakka.com.cn",
+      "baseUrlEnv": "OPENAI_BASE_URL",
+      "credEnv": "OPENAI_API_KEY",
+      "inputs": [{ "key": "apiKey", "label": "API Key", "type": "password", "required": true }],
+      "models": [
+        {
+          "modelName": "gpt-image-2",
+          "displayName": "GPT Image 2",
+          "type": "image",
+          "modes": ["text", "singleImage", "multiReference"],
+          "cellSize": 2048
+        }
+      ]
+    },
+    {
+      "id": "orchestrator",
+      "name": "主推理 LLM",
+      "category": "vlm",
+      "adapter": "openai-chat",
+      "baseUrl": null,
+      "baseUrlEnv": "ORCHESTRATOR_BASE_URL",
+      "credEnv": "ORCHESTRATOR_API_KEY",
+      "inputs": [{ "key": "apiKey", "label": "API Key", "type": "password", "required": true }],
+      "models": [
+        {
+          "modelName": "mimo-v2.5",
+          "modelNameEnv": "ORCHESTRATOR_MODEL",
+          "displayName": "主推理（全模态）",
+          "type": "vlm",
+          "modes": ["text", "image"]
+        }
+      ]
+    },
+    {
+      "id": "aliyun-tryon",
+      "name": "阿里云 OutfitAnyone",
+      "category": "tryon",
+      "adapter": "aliyun-tryon",
+      "baseUrl": null,
+      "inputs": [{ "key": "apiKey", "label": "API Key", "type": "password", "required": true }],
+      "models": [
+        {
+          "modelName": "aitryon",
+          "displayName": "OutfitAnyone 试穿",
+          "type": "tryon",
+          "modes": ["singleImage"]
+        }
+      ]
+    },
+    {
+      "id": "kling-video",
+      "name": "可灵视频",
+      "category": "video",
+      "adapter": "kling-video",
+      "baseUrl": null,
+      "inputs": [{ "key": "apiKey", "label": "API Key", "type": "password", "required": true }],
+      "models": [
+        {
+          "modelName": "kling",
+          "displayName": "可灵视频生成",
+          "type": "video",
+          "modes": ["singleImage", "text"]
+        }
+      ]
+    },
+    {
+      "id": "agnes-image",
+      "name": "Agnes 图片生成",
+      "category": "image",
+      "adapter": "agnes-image",
+      "baseUrl": "https://apihub.agnes-ai.com",
+      "credEnv": "AGNES_API_KEY",
+      "inputs": [{ "key": "apiKey", "label": "API Key", "type": "password", "required": true }],
+      "models": [
+        {
+          "modelName": "agnes-image-2.1-flash",
+          "displayName": "Agnes Image 2.1 Flash",
+          "type": "image",
+          "modes": ["text"],
+          "cellSize": 1024
+        }
+      ]
+    },
+    {
+      "id": "agnes-video",
+      "name": "Agnes 视频生成",
+      "category": "video",
+      "adapter": "agnes-video",
+      "baseUrl": "https://apihub.agnes-ai.com",
+      "credEnv": "AGNES_API_KEY",
+      "inputs": [{ "key": "apiKey", "label": "API Key", "type": "password", "required": true }],
+      "models": [
+        {
+          "modelName": "agnes-video-v2.0",
+          "displayName": "Agnes Video v2.0",
+          "type": "video",
+          "modes": ["text"]
+        }
+      ]
+    }
+  ],
+  "taskSlots": [
+    { "slotKey": "main-image", "vendorId": "grsai" },
+    { "slotKey": "orchestrator", "vendorId": "orchestrator" },
+    { "slotKey": "vlm", "vendorId": "orchestrator" },
+    { "slotKey": "detail-page", "vendorId": "grsai" },
+    { "slotKey": "tryon", "vendorId": "aliyun-tryon" },
+    { "slotKey": "video", "vendorId": "agnes-video" }
+  ]
+}

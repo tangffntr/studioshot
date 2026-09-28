@@ -13,6 +13,7 @@ import { runJob } from "../agent/runner";
 import { seedDefaults } from "../db/seed";
 import { encryptCredentials, decryptCredentials } from "../model-manager/credentials";
 import { listAdapters } from "../adapters/registry";
+import { loadBuiltinCatalog, resolveBaseUrl, resolveModelName, modelIdOf } from "../db/builtin-catalog";
 import { CreateProductRequest, CreateJobRequest } from "@ecom/shared";
 import type { SseEvent } from "@ecom/shared";
 import path from "node:path";
@@ -351,6 +352,42 @@ router.post("/api/settings/vendor", (req, res) => {
     inputs: JSON.stringify(passwordInput), createdAt: Date.now(),
   }).run();
   res.json({ ok: true, id });
+});
+
+/** GET /api/settings/vendor-templates — 内置供应商模板（声明式目录，供设置页「从模板添加」） */
+router.get("/api/settings/vendor-templates", (_req, res) => {
+  const catalog = loadBuiltinCatalog();
+  res.json({
+    templates: catalog.vendors.map((v) => ({
+      id: v.id, name: v.name, category: v.category, adapter: v.adapter,
+      baseUrl: resolveBaseUrl(v),
+      models: v.models.map((m) => ({ id: modelIdOf(v.id, m), modelName: resolveModelName(m), displayName: m.displayName, type: m.type })),
+    })),
+  });
+});
+
+/** POST /api/settings/vendor/from-template — 从内置模板一键创建供应商（含默认模型；凭证到配置页填） */
+router.post("/api/settings/vendor/from-template", (req, res) => {
+  const { templateId } = req.body || {};
+  if (!templateId) return res.status(400).json({ error: "需提供 templateId" });
+  const spec = loadBuiltinCatalog().vendors.find((v) => v.id === templateId);
+  if (!spec) return res.status(404).json({ error: `模板不存在: ${templateId}` });
+  const db = getDb();
+  const existing = db.select().from(vendors).where(eq(vendors.id, spec.id)).all()[0];
+  if (existing) return res.status(409).json({ error: `供应商 ${spec.id} 已存在` });
+  db.insert(vendors).values({
+    id: spec.id, name: spec.name, category: spec.category, adapter: spec.adapter,
+    baseUrl: resolveBaseUrl(spec), inputs: JSON.stringify(spec.inputs), createdAt: Date.now(),
+  }).run();
+  for (const m of spec.models) {
+    const modelId = modelIdOf(spec.id, m);
+    if (db.select().from(models).where(eq(models.id, modelId)).all()[0]) continue;
+    db.insert(models).values({
+      id: modelId, vendorId: spec.id, modelName: resolveModelName(m), displayName: m.displayName, type: m.type,
+      modes: JSON.stringify(m.modes), pricing: JSON.stringify({ unit: "per-call", price: 50 }), enabled: 1, cellSize: m.cellSize ?? 1024,
+    }).run();
+  }
+  res.json({ ok: true, id: spec.id, modelCount: spec.models.length });
 });
 
 /** DELETE /api/settings/vendor/:id — 删除自定义供应商（级联清理） */

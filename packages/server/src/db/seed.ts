@@ -1,12 +1,15 @@
 /**
  * server/db/seed.ts — 默认数据 seed（首次启动初始化）
- * 从 .env 读凭证，建立供应商/模型绑定 + 内置模板。
+ * 供应商/模型/任务槽由声明式目录 config/providers.builtin.json 驱动；
+ * 凭证从 .env 首次引导（用户设置页配置优先，FORCE_ENV_SYNC=1 强制同步）。
  * 幂等：已存在则跳过。
  */
 import { getDb } from "./client";
 import { vendors, vendorCredentials, models, taskSlots, templates, templateSlots, platformSpecs, materials } from "./schema";
 import { eq } from "drizzle-orm";
 import { encryptCredentials } from "../model-manager/credentials";
+import { loadBuiltinCatalog, resolveBaseUrl, resolveModelName, modelIdOf } from "./builtin-catalog";
+import { listAdapters } from "../adapters/registry";
 
 export function seedDefaults(): void {
   const db = getDb();
@@ -17,12 +20,18 @@ export function seedDefaults(): void {
     if (exists) return;
     db.insert(vendors).values({ id, name, category, adapter, baseUrl, inputs: JSON.stringify(inputs), createdAt: now }).run();
   }
-  function upsertCred(vendorId: string, values: Record<string, string>) {
+  /**
+   * 从 .env 引导凭证：仅首次写入，之后以设置页（DB）为准，重启不覆盖用户改动。
+   * 设 FORCE_ENV_SYNC=1 可强制每次启动用 .env 值覆盖（换 key 后同步用）。
+   */
+  function upsertCredFromEnv(vendorId: string, values: Record<string, string>) {
     const exists = db.select().from(vendorCredentials).where(eq(vendorCredentials.vendorId, vendorId)).all()[0];
+    if (exists && process.env.FORCE_ENV_SYNC !== "1") return;
+    const valuesEnc = encryptCredentials(values);
     if (exists) {
-      db.update(vendorCredentials).set({ valuesEnc: encryptCredentials(values), updatedAt: now }).where(eq(vendorCredentials.vendorId, vendorId)).run();
+      db.update(vendorCredentials).set({ valuesEnc, updatedAt: now }).where(eq(vendorCredentials.vendorId, vendorId)).run();
     } else {
-      db.insert(vendorCredentials).values({ vendorId, valuesEnc: encryptCredentials(values), enabled: 1, updatedAt: now }).run();
+      db.insert(vendorCredentials).values({ vendorId, valuesEnc, enabled: 1, updatedAt: now }).run();
     }
   }
   function upsertModel(id: string, vendorId: string, modelName: string, displayName: string, type: string, modes: string[], cellSize: number = 1024) {
@@ -41,59 +50,28 @@ export function seedDefaults(): void {
     db.insert(taskSlots).values({ slotKey, modelId, params: null }).run();
   }
 
-  const passwordInput = { key: "apiKey", label: "API Key", type: "password" as const, required: true };
-
-  // 1. grsai 生图（gpt-image-2，2k 模型）
-  upsertVendor("grsai", "Grsai (gpt-image-2)", "image", "grsai", process.env.OPENAI_BASE_URL || "https://grsai.dakka.com.cn", [passwordInput]);
-  if (process.env.OPENAI_API_KEY) {
-    upsertCred("grsai", { apiKey: process.env.OPENAI_API_KEY, baseUrl: process.env.OPENAI_BASE_URL || "https://grsai.dakka.com.cn" });
+  // ---- 内置供应商 / 模型 / 凭证 / 任务槽：声明式目录驱动（config/providers.builtin.json）----
+  const catalog = loadBuiltinCatalog();
+  for (const spec of catalog.vendors) {
+    if (!listAdapters().includes(spec.adapter)) {
+      throw new Error(`providers.builtin.json 供应商 ${spec.id} 的 adapter "${spec.adapter}" 未注册（可用: ${listAdapters().join(", ")}）`);
+    }
+    upsertVendor(spec.id, spec.name, spec.category, spec.adapter, resolveBaseUrl(spec), spec.inputs);
+    if (spec.credEnv && process.env[spec.credEnv]) {
+      upsertCredFromEnv(spec.id, { apiKey: process.env[spec.credEnv]!, baseUrl: resolveBaseUrl(spec) || "" });
+    }
+    for (const m of spec.models) {
+      upsertModel(modelIdOf(spec.id, m), spec.id, resolveModelName(m), m.displayName, m.type, m.modes, m.cellSize ?? 1024);
+    }
   }
-  upsertModel("grsai:gpt-image-2", "grsai", "gpt-image-2", "GPT Image 2", "image", ["text", "singleImage", "multiReference"], 2048);
-  upsertSlot("main-image", "grsai:gpt-image-2");
-
-  // 2. orchestrator 主推理 LLM（MiMo-V2.5 全模态，支持图片输入）
-  // 注意：mimo-v2.5 是全模态；mimo-v2.5-pro 是纯文本（不支持图片）
-  const orchModel = process.env.ORCHESTRATOR_MODEL || "mimo-v2.5";
-  upsertVendor("orchestrator", "主推理 LLM", "vlm", "openai-chat", process.env.ORCHESTRATOR_BASE_URL || null, [passwordInput]);
-  if (process.env.ORCHESTRATOR_API_KEY) {
-    upsertCred("orchestrator", { apiKey: process.env.ORCHESTRATOR_API_KEY, baseUrl: process.env.ORCHESTRATOR_BASE_URL || "" });
+  for (const slot of catalog.taskSlots) {
+    const vendor = catalog.vendors.find((v) => v.id === slot.vendorId);
+    const m = vendor?.models[slot.modelIndex ?? 0];
+    if (vendor && m) upsertSlot(slot.slotKey, modelIdOf(vendor.id, m));
   }
-  upsertModel(`orchestrator:${orchModel}`, "orchestrator", orchModel, "主推理（全模态）", "vlm", ["text", "image"]);
-  upsertSlot("orchestrator", `orchestrator:${orchModel}`);
 
-  // 3. vlm 看图分析（复用 orchestrator 端点）
-  upsertSlot("vlm", `orchestrator:${orchModel}`);
-
-  // 4. detail-page slot 也绑 grsai（模板详情页图位用）
-  upsertSlot("detail-page", "grsai:gpt-image-2");
-
-  // 5. aliyun-tryon 供应商（虚拟试穿，凭证需用户在设置页配）
-  upsertVendor("aliyun-tryon", "阿里云 OutfitAnyone", "tryon", "aliyun-tryon", null, [passwordInput]);
-  upsertModel("aliyun-tryon:aitryon", "aliyun-tryon", "aitryon", "OutfitAnyone 试穿", "tryon", ["singleImage"]);
-  upsertSlot("tryon", "aliyun-tryon:aitryon");
-
-  // 6. kling-video 供应商（视频生成，凭证需用户在设置页配）
-  upsertVendor("kling-video", "可灵视频", "video", "kling-video", null, [passwordInput]);
-  upsertModel("kling-video:kling", "kling-video", "kling", "可灵视频生成", "video", ["singleImage", "text"]);
-  upsertSlot("video", "agnes-video:agnes-video-v2.0");
-
-  // 7. agnes-image 供应商（Agnes 图片生成）
-  upsertVendor("agnes-image", "Agnes 图片生成", "image", "agnes-image", "https://apihub.agnes-ai.com", [passwordInput]);
-  if (process.env.AGNES_API_KEY) {
-    upsertCred("agnes-image", { apiKey: process.env.AGNES_API_KEY, baseUrl: "https://apihub.agnes-ai.com" });
-  }
-  upsertModel("agnes-image:agnes-image-2.1-flash", "agnes-image", "agnes-image-2.1-flash", "Agnes Image 2.1 Flash", "image", ["text"], 1024);
-
-  // 8. agnes-video 供应商（Agnes 视频生成）
-  upsertVendor("agnes-video", "Agnes 视频生成", "video", "agnes-video", "https://apihub.agnes-ai.com", [passwordInput]);
-  if (process.env.AGNES_API_KEY) {
-    upsertCred("agnes-video", { apiKey: process.env.AGNES_API_KEY, baseUrl: "https://apihub.agnes-ai.com" });
-  }
-  upsertModel("agnes-video:agnes-video-v2.0", "agnes-video", "agnes-video-v2.0", "Agnes Video v2.0", "video", ["text"]);
-
-  // 9. 内置模板
+  // 内置模板 + 素材（与模型目录无关，仍随代码内置）
   seedTemplates();
-  // 8. 内置素材（prompt 骨架）
   seedBuiltinMaterials();
 }
 

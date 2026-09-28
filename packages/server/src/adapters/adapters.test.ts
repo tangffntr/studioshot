@@ -74,8 +74,8 @@ describe("GrsaiAdapter", () => {
 });
 
 describe("registry", () => {
-  it("注册了 grsai、openai-chat、aliyun-tryon、kling-video", () => {
-    expect(listAdapters().sort()).toEqual(["aliyun-tryon", "grsai", "kling-video", "openai-chat"]);
+  it("注册了全部内置适配器（grsai/openai-chat/aliyun-tryon/kling-video/agnes-image/agnes-video）", () => {
+    expect(listAdapters().sort()).toEqual(["agnes-image", "agnes-video", "aliyun-tryon", "grsai", "kling-video", "openai-chat"]);
   });
 
   it("getAdapter 返回正确实例", () => {
